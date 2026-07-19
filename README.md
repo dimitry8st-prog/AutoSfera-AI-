@@ -68,19 +68,20 @@
 | Компонент | Статус |
 |---|---|
 | AI Orchestrator (маршрутизация) | ✅ |
-| Sales / Customer Support / Service Agents | ✅ |
-| 12 Skills (по 4 на агента) | ✅ |
+| Sales / Support / Service / Employee Agents | ✅ |
+| 16 Skills (по 4 на агента) | ✅ |
 | System Prompts (`prompts/`) | ✅ |
-| Knowledge Base (10 разделов, JSON) | ✅ |
+| Knowledge Base (JSON, в т.ч. internal) | ✅ |
 | RAG (TF-IDF, без внешней vector DB) | ✅ |
+| SQLite: диалоги и заявки по `dealer_id` | ✅ |
+| API заявок и аналитики | ✅ |
 | Веб-чат, quick replies, просмотр KB | ✅ |
-| История диалога в рамках сессии | ✅ |
 | Логирование (файл + JSONL сессий) | ✅ |
-| pytest-покрытие ядра и API | ✅ |
+| pytest-покрытие ядра, API и storage | ✅ |
 | Каналы Telegram / WhatsApp / Email / CRM | 🟡 каркас API без внешних Bot API |
-| Аутентификация, live CRM, vector DB | ❌ вне MVP |
+| Аутентификация, live CRM, vector DB | ❌ вне MVP (см. roadmap 2.1) |
 
-Соответствие критериям приёмки ТЗ: оркестратор, 3 агента, промпты, 12 Skills, KB, RAG, FAQ/скрипты, JSON-примеры интеграции, тестовые диалоги, безопасность (тестовые данные, эскалации, Least Privilege по разделам KB).
+Соответствие пилоту: оркестратор, 4 агента, промпты, 16 Skills, KB, RAG, заявки, аналитика, изоляция `dealer_id`, эскалации, Least Privilege по разделам KB.
 
 ---
 
@@ -101,24 +102,24 @@
         ▼
   AI Orchestrator  ── первое сообщение: выбор агента
         │
-   ┌────┼──────────────┐
-   ▼    ▼              ▼
- Sales Support      Service
- Agent  Agent        Agent
-   │      │             │
-   └──────┴── Skills ───┘
+   ┌────┼──────────────┬────────────┐
+   ▼    ▼              ▼            ▼
+ Sales Support      Service     Employee
+ Agent  Agent        Agent       Agent
+   │      │             │            │
+   └──────┴── Skills (16) ──────────┘
               │
               ▼
              RAG  →  Knowledge Base
               │
               ▼
-     logs/ + data/dialogues/*.jsonl
+     SQLite + logs/ + data/dialogues/*.jsonl
      (при необходимости — эскалация сотруднику)
 ```
 
 **Как работает сессия**
 
-1. Первое сообщение → Orchestrator возвращает агента (`SALES_AGENT` | `SUPPORT_AGENT` | `SERVICE_AGENT`).
+1. Первое сообщение → Orchestrator возвращает агента (`SALES_AGENT` | `SUPPORT_AGENT` | `SERVICE_AGENT` | `EMPLOYEE_AGENT`).
 2. Дальнейшие сообщения в той же `session_id` обрабатывает выбранный агент.
 3. «Новый чат» / `POST /api/reset` сбрасывает агента и историю в памяти процесса.
 
@@ -157,7 +158,7 @@ uvicorn autonova.api.main:app --reload --app-dir src
 curl http://127.0.0.1:8000/health
 ```
 
-Ожидаемый ответ содержит `"status":"ok"`, список агентов, `"skills":12`, число документов KB.
+Ожидаемый ответ содержит `"status":"ok"`, четыре агента, `"skills":16`, `"version":"2.0.0"`, `dealer_id` и число документов KB.
 
 ---
 
@@ -171,6 +172,9 @@ cp .env.example .env
 
 | Переменная | По умолчанию | Назначение |
 |---|---|---|
+| `DEALER_ID` | `main-salon` | идентификатор салона (изоляция данных) |
+| `DEALER_NAME` | `AutoSfera Demo Salon` | название салона |
+| `DATABASE_PATH` | `data/autosfera.db` | путь к SQLite |
 | `LLM_MODE` | `mock` | `mock` или `openai` |
 | `OPENAI_API_KEY` | — | ключ для режима `openai` |
 | `OPENAI_BASE_URL` | `https://api.openai.com/v1` | совместимый endpoint |
@@ -182,6 +186,8 @@ cp .env.example .env
 Пример `.env` для реального LLM:
 
 ```env
+DEALER_ID=main-salon
+DEALER_NAME=AutoSfera Demo Salon
 LLM_MODE=openai
 OPENAI_API_KEY=sk-...
 OPENAI_MODEL=gpt-4o-mini
@@ -211,12 +217,15 @@ LOG_LEVEL=INFO
 | Метод | Путь | Описание |
 |---|---|---|
 | `GET` | `/` | веб-чат |
-| `GET` | `/health` | статус, агенты, skills, размер KB |
+| `GET` | `/health` | статус, агенты, skills, dealer, размер KB |
 | `GET` | `/api/agents` | метаданные агентов |
-| `GET` | `/api/skills` | список 12 skills |
+| `GET` | `/api/skills` | список 16 skills |
 | `GET` | `/api/knowledge` | документы KB по разделам |
 | `POST` | `/api/chat` | основное сообщение чата |
 | `POST` | `/api/reset` | сброс сессии |
+| `POST` | `/api/requests` | создать лид / тест-драйв / сервисную заявку |
+| `GET` | `/api/requests` | список заявок текущего салона |
+| `GET` | `/api/analytics/summary` | сводные показатели салона |
 | `POST` | `/api/channels/{name}` | stub-каналы: `telegram`, `whatsapp`, `email`, `crm` |
 
 ### Пример: чат
@@ -293,6 +302,17 @@ Content-Type: application/json
 
 Промпт: `prompts/service_agent.txt`
 
+### Employee Agent — внутренний помощник
+
+| Skill ID | Название | Примеры тем |
+|---|---|---|
+| `internal_knowledge` | Internal Knowledge | регламенты, внутренние процессы |
+| `sales_coaching` | Sales Coaching | скрипты продаж, подсказки менеджеру |
+| `process_lookup` | Process Lookup | операционные процедуры |
+| `manager_escalation` | Manager Escalation | передача руководителю |
+
+Промпт: `prompts/employee_agent.txt`
+
 **Ограничения агентов (заложены в промпты и skills):** не выдумывать факты вне KB; не подтверждать гарантийный случай; не принимать финансовые/юридические решения; не менять ПДн; при критике — эскалация.
 
 ---
@@ -308,6 +328,7 @@ Content-Type: application/json
 | `customer_support` | заказы, документы, возврат |
 | `service` | гарантия, ТО, запись |
 | `finance` | кредит, лизинг |
+| `internal` | внутренние операции (Employee Agent) |
 | `legal` | ограничения, 152-ФЗ (учебный контур) |
 | `faq` | FAQ по агентам |
 | `scripts` | скрипты общения |
@@ -349,13 +370,14 @@ pytest --cov=autonova -q
 Основные проверки (`tests/`):
 
 - загрузка KB и Least Privilege;
-- регистрация ровно 12 skills;
+- регистрация ровно 16 skills;
 - RAG retrieval;
-- маршрутизация оркестратора (sales / support / service / leasing);
+- маршрутизация оркестратора (sales / support / service / employee / leasing);
 - сохранение агента в сессии и reset;
 - эскалации (неизвестный заказ, подтверждение гарантии);
+- SQLite: заявки и аналитика по `dealer_id`;
 - запись dialogue logger;
-- FastAPI: `/health`, `/api/chat`, `/api/reset`, stub-канал telegram.
+- FastAPI: `/health`, `/api/chat`, `/api/reset`, `/api/requests`, stub-канал telegram.
 
 ---
 
@@ -381,22 +403,20 @@ pytest --cov=autonova -q
 ## Структура репозитория
 
 ```
-AutoNova/
+AutoSfera AI/
 ├── README.md
-├── AutoNova_MVP_Documentation.md   # описание текущего MVP
-├── pyproject.toml
+├── docs/COMMERCIAL_PILOT.md        # спецификация пилота 2.0
+├── AutoNova_MVP_Documentation.md   # архив учебного MVP 1.1
+├── pyproject.toml                  # пакет autonova 2.0.0
 ├── .env.example
-├── prompts/                        # system prompts
-│   ├── orchestrator.txt
-│   ├── sales_agent.txt
-│   ├── support_agent.txt
-│   └── service_agent.txt
+├── prompts/                        # system prompts (4 агента + orchestrator)
 ├── knowledge_base/                 # JSON Knowledge Base
 ├── src/autonova/
 │   ├── api/main.py                 # FastAPI
 │   ├── orchestrator/               # маршрутизация и сессии
-│   ├── agents/                     # Sales / Support / Service
-│   ├── skills/                     # 12 skills
+│   ├── agents/                     # Sales / Support / Service / Employee
+│   ├── skills/                     # 16 skills
+│   ├── storage/                    # SQLite (dealer_id)
 │   ├── rag/                        # retrieval
 │   ├── knowledge/                  # загрузка KB
 │   ├── channels/                   # web + stubs
@@ -410,7 +430,7 @@ AutoNova/
 │   ├── TEST_DIALOGS.md
 │   └── integration_examples.json
 ├── logs/
-└── data/dialogues/
+└── data/                           # SQLite + dialogues/
 ```
 
 Исходное ТЗ: файл `ТЗ - окончательный вариант.docx` в корне проекта.
@@ -420,11 +440,11 @@ AutoNova/
 ## Ограничения
 
 1. RAG — учебный TF-IDF, не production vector DB.
-2. История сессии хранится в памяти процесса (+ JSONL логов); после рестарта сервера сессии в RAM сбрасываются.
+2. Активная сессия чата держится в памяти процесса; после рестарта RAM сбрасывается (история уже записана в SQLite/JSONL).
 3. Telegram / WhatsApp / Email / CRM — HTTP-заготовки без реальных webhook/Bot API.
-4. Нет аутентификации пользователей.
+4. Нет аутентификации пользователей (roadmap 2.1).
 5. Все коммерческие и клиентские данные вымышлены.
-6. В mock-режиме маршрутизация и ответы детерминированы skills/KB; «живой» диалоговый стиль LLM включается через `LLM_MODE=openai` (оркестратор), при этом фактология по-прежнему опирается на Skills + RAG.
+6. В mock-режиме маршрутизация и ответы детерминированы skills/KB; «живой» диалоговый стиль LLM включается через `LLM_MODE=openai`, фактология по-прежнему опирается на Skills + RAG.
 
 ---
 
@@ -432,12 +452,13 @@ AutoNova/
 
 | Файл | Содержание |
 |---|---|
-| [AutoNova_MVP_Documentation.md](AutoNova_MVP_Documentation.md) | обзор MVP, сценарии, тестовые данные |
-| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | поток запроса, skills, API, логи |
+| [docs/COMMERCIAL_PILOT.md](docs/COMMERCIAL_PILOT.md) | коммерческий пилот 2.0 |
+| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | поток запроса, skills, API, storage |
 | [docs/TEST_DIALOGS.md](docs/TEST_DIALOGS.md) | тестовые диалоги |
 | [docs/integration_examples.json](docs/integration_examples.json) | примеры JSON-интеграции |
+| [AutoNova_MVP_Documentation.md](AutoNova_MVP_Documentation.md) | архив учебного MVP 1.1 |
 | http://127.0.0.1:8000/docs | OpenAPI (Swagger UI) после запуска |
 
 ---
 
-*AutoNova — учебный проект. Данные вымышлены.*
+*AutoSfera AI 2.0.0 — коммерческий MVP-пилот. Демо-данные вымышлены.*
