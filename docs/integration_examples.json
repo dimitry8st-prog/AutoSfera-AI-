@@ -1,0 +1,64 @@
+{
+  "integration": "AutoNova Multi-Agent API",
+  "version": "1.0.0",
+  "channels": ["web", "telegram", "whatsapp", "email", "crm"],
+  "examples": [
+    {
+      "name": "web_chat",
+      "method": "POST",
+      "path": "/api/chat",
+      "request": {
+        "message": "Хочу купить кроссовер",
+        "session_id": null,
+        "channel": "web"
+      },
+      "response_example": {
+        "session_id": "uuid",
+        "agent": "SALES_AGENT",
+        "agent_label": "Sales Agent",
+        "skill": "vehicle_selection",
+        "escalated": false,
+        "rag_ids": ["sales-models"],
+        "reply": "..."
+      }
+    },
+    {
+      "name": "telegram_webhook",
+      "method": "POST",
+      "path": "/api/channels/telegram",
+      "request": {
+        "chat_id": "123456",
+        "text": "Статус заказа АН-2024-0512"
+      }
+    },
+    {
+      "name": "crm_ticket",
+      "method": "POST",
+      "path": "/api/channels/crm",
+      "request": {
+        "ticket_id": "CRM-42",
+        "note": "Клиент спрашивает гарантию на кузов"
+      }
+    },
+    {
+      "name": "orchestrator_routing",
+      "type": "internal",
+      "input": "Лизинг для юридических лиц на 5 авто",
+      "output": {
+        "agent": "SALES_AGENT",
+        "greeting": "Передаю вас Sales Agent AutoNova.",
+        "reason": "intent_match"
+      }
+    },
+    {
+      "name": "escalation",
+      "type": "internal",
+      "input": "Подтверди гарантию это гарантийный случай",
+      "output": {
+        "agent": "SERVICE_AGENT",
+        "escalated": true,
+        "escalation_target": "service_engineer"
+      }
+    }
+  ]
+}

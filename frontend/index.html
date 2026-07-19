@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>AutoSfera AI — единый интеллект автодилера</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;700&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/static/styles.css" />
+</head>
+<body>
+  <div class="atmosphere" aria-hidden="true"></div>
+  <header class="top">
+    <div class="brand">
+      <span class="brand-mark">AS</span>
+      <div>
+        <p class="brand-name">AutoSfera AI</p>
+        <p class="brand-sub">Единый интеллект автодилера</p>
+      </div>
+    </div>
+    <div class="header-actions">
+      <span id="agentBadge" class="agent-badge">Ожидание маршрутизации</span>
+      <button id="resetBtn" type="button">Новый чат</button>
+      <button id="kbBtn" type="button" class="ghost">База знаний</button>
+    </div>
+  </header>
+
+  <main class="layout">
+    <section class="chat-panel" id="chatPanel">
+      <div id="messages" class="messages" aria-live="polite"></div>
+      <div class="composer">
+        <div class="quick" id="quickReplies">
+          <button type="button" data-q="Хочу купить кроссовер">Кроссовер</button>
+          <button type="button" data-q="Статус заказа АН-2024-0512">Статус заказа</button>
+          <button type="button" data-q="Вопрос по гарантии на кузов">Гарантия</button>
+          <button type="button" data-q="Лизинг для юридических лиц на 5 авто">Лизинг B2B</button>
+          <button type="button" data-q="Найди внутренний регламент обработки нового лида">Сотрудникам</button>
+        </div>
+        <form id="chatForm">
+          <input id="messageInput" type="text" placeholder="Напишите сообщение..." autocomplete="off" required />
+          <button type="submit">Отправить</button>
+        </form>
+        <p class="disclaimer">Вы общаетесь с ИИ-ассистентом AutoSfera AI. Демо-контур использует вымышленные данные.</p>
+      </div>
+    </section>
+
+    <aside class="kb-panel hidden" id="kbPanel">
+      <h2>Knowledge Base</h2>
+      <div id="kbContent"></div>
+    </aside>
+  </main>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>
