@@ -42,7 +42,7 @@ class Settings(BaseSettings):
         default="https://api.openai.com/v1",
         validation_alias="OPENAI_BASE_URL",
     )
-    openai_model: str = Field(default="gpt-4o-mini", validation_alias="OPENAI_MODEL")
+    openai_model: str = Field(default="gpt-5.6", validation_alias="OPENAI_MODEL")
 
     rag_top_k: int = 6
     rag_min_score: float = 0.05
