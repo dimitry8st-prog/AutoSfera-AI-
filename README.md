@@ -462,3 +462,38 @@ AutoSfera AI/
 ---
 
 *AutoSfera AI 2.0.0 — коммерческий MVP-пилот. Демо-данные вымышлены.*
+
+
+---
+
+## OpenAI Build Week 2026
+
+**Category:** Work & Productivity
+
+AutoSfera AI is adapted for OpenAI Build Week as a working multi-agent productivity platform for automotive dealerships. The demonstrable flow routes customer and employee requests to four specialized agents, grounds answers in the dealership knowledge base, captures structured leads and service requests, and exposes operational analytics.
+
+### How Codex contributed
+
+Codex was used to inspect the existing architecture, map the product to the hackathon requirements, identify submission gaps, prepare the Devpost presentation, and implement the Build Week configuration and documentation changes on the `agent/openai-build-week` branch. The final submission must include the `/feedback` Session ID for the primary build thread so judges can verify this work.
+
+### GPT-5.6 evaluation mode
+
+The OpenAI-compatible runtime is configured with `OPENAI_MODEL=gpt-5.6` for the Build Week demonstration. This mode requires a valid `OPENAI_API_KEY` and access to that model. The offline `mock` mode remains available so judges can run the complete routing, Skills, RAG, persistence, and analytics flow without credentials.
+
+```env
+LLM_MODE=openai
+OPENAI_API_KEY=your-key
+OPENAI_MODEL=gpt-5.6
+```
+
+### Judge walkthrough
+
+1. Install and run the project using the commands in this README.
+2. Open `http://127.0.0.1:8000`.
+3. Try: `Хочу купить кроссовер`, `Статус заказа АН-2024-0512`, `Вопрос по гарантии на кузов`, and `Лизинг для юридических лиц на 5 авто`.
+4. Review `/api/requests` and `/api/analytics/summary` to see conversations converted into dealership operations.
+5. Switch to `LLM_MODE=openai` only when a valid key and GPT-5.6 access are available.
+
+**Repository:** https://github.com/dimitry8st-prog/AutoSfera-AI-
+
+All demo customer, vehicle, pricing, and order data are fictional.
