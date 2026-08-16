@@ -1,0 +1,4 @@
+interface:
+  display_name: "Анализ конкурентов AutoSfera"
+  short_description: "Доказательный анализ AI-конкурентов AutoSfera"
+  default_prompt: "Используй $analyze-autosfera-competitors для анализа конкурента AutoSfera AI по названию компании или сайту."
