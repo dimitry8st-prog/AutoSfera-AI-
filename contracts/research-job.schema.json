@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://autosfera.ai/contracts/research-job.schema.json",
+  "title": "AutoSfera research job",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["job_id", "dealer_id", "actor", "query", "trace_id", "idempotency_key"],
+  "properties": {
+    "job_id": {"type": "string", "format": "uuid"},
+    "dealer_id": {"type": "string", "minLength": 1, "maxLength": 120},
+    "actor": {"type": "string", "minLength": 1, "maxLength": 120},
+    "query": {"type": "string", "minLength": 5, "maxLength": 2000},
+    "trace_id": {"type": "string", "format": "uuid"},
+    "idempotency_key": {"type": "string", "minLength": 8, "maxLength": 160}
+  }
+}

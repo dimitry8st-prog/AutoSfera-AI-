@@ -74,6 +74,7 @@ _SKILL_SECTIONS: dict[str, tuple[str, ...]] = {
     "warranty_consultation": ("service", "faq"),
     "service_booking": ("service",),
     "maintenance_consultation": ("service", "faq"),
+    "competitor_research": ("internal", "sales", "company"),
 }
 
 
@@ -143,6 +144,11 @@ def _context_or_missing(
 def _extract_phone(text: str) -> str | None:
     match = re.search(r"(\+?\d[\d\-\s()]{9,}\d)", text)
     return match.group(1).strip() if match else None
+
+
+def _extract_vehicle(text: str) -> str | None:
+    match = re.search(r"\b(Nova\s+(?:Comfort|Drive|Cargo|Classic))\b", text, flags=re.IGNORECASE)
+    return match.group(1).title() if match else None
 
 
 def _extract_order_id(text: str) -> str | None:
@@ -238,8 +244,9 @@ def credit_leasing(message: str, chunks: list[RetrievedChunk], ctx: dict[str, An
 def test_drive_booking(message: str, chunks: list[RetrievedChunk], ctx: dict[str, Any]) -> SkillResult:
     text, ids, _ = _context_or_missing(chunks, "test_drive_booking")
     phone = _extract_phone(message)
-    fields = {"phone": phone} if phone else {}
-    if phone and any(m in message.lower() for m in ("nova", "comfort", "drive", "cargo")):
+    vehicle = _extract_vehicle(message)
+    fields = {key: value for key, value in {"phone": phone, "vehicle": vehicle}.items() if value}
+    if phone and vehicle:
         reply = (
             f"{text}\n\n"
             f"Заявка на тест-драйв принята предварительно (телефон: {phone}). "
@@ -445,6 +452,17 @@ def process_lookup(message: str, chunks: list[RetrievedChunk], ctx: dict[str, An
     return SkillResult("process_lookup", text, escalated=missing, escalation_target="department_manager" if missing else None, rag_ids=ids)
 
 
+def competitor_research(message: str, chunks: list[RetrievedChunk], ctx: dict[str, Any]) -> SkillResult:
+    return SkillResult(
+        "competitor_research",
+        "Запрос на исследование конкурента подготовлен. Создайте задачу в разделе "
+        "«Исследования»: внешний результат сохранится как черновик и попадёт в базу "
+        "знаний только после approve сотрудником.",
+        rag_ids=[c.document.id for c in chunks],
+        metadata={"requires_research_job": True, "human_approval": True},
+    )
+
+
 def manager_escalation(message: str, chunks: list[RetrievedChunk], ctx: dict[str, Any]) -> SkillResult:
     return SkillResult(
         "manager_escalation",
@@ -573,6 +591,12 @@ def build_skill_registry() -> dict[str, Skill]:
             "manager_escalation", "Manager Escalation", "EMPLOYEE_AGENT",
             "Передача вопроса руководителю", ("руководител", "эскалац", "согласован", "решение"),
             manager_escalation,
+        ),
+        Skill(
+            "competitor_research", "Competitor Research", "EMPLOYEE_AGENT",
+            "Исследование одного конкурента через защищённый n8n/Langflow-контур",
+            ("конкурент", "сравни компанию", "исследуй продукт", "анализ рынка", "competitor"),
+            competitor_research,
         ),
     ]
     registry = {s.id: s for s in skills}

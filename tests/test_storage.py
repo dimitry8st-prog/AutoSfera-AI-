@@ -17,3 +17,32 @@ def test_store_isolates_dealers_and_builds_analytics(tmp_path):
     assert summary["conversations"] == 1
     assert summary["requests"] == 1
     assert summary["requests_by_kind"] == {"lead": 1}
+
+
+def test_session_survives_new_store_instance(tmp_path):
+    path = tmp_path / "sessions.db"
+    PlatformStore(path).save_session(
+        "salon-1", "s1", "web", "SALES_AGENT", [{"role": "user", "content": "Кроссовер"}]
+    )
+    restored = PlatformStore(path).load_session("salon-1", "s1")
+    assert restored["active_agent"] == "SALES_AGENT"
+    assert restored["history"][0]["content"] == "Кроссовер"
+
+
+def test_request_status_and_assignee_update(tmp_path):
+    store = PlatformStore(tmp_path / "requests.db")
+    created = store.create_request("salon-1", "lead", customer_name="Иван")
+    updated = store.update_request(
+        "salon-1", created["id"], status="assigned", assigned_to="Мария"
+    )
+    assert updated["status"] == "assigned"
+    assert updated["assigned_to"] == "Мария"
+
+
+def test_research_idempotency(tmp_path):
+    store = PlatformStore(tmp_path / "research.db")
+    first, created = store.create_research_job("salon-1", "employee", "Конкурент A", "same-key-123", "trace-1")
+    second, duplicate_created = store.create_research_job("salon-1", "employee", "Другая формулировка", "same-key-123", "trace-2")
+    assert created is True
+    assert duplicate_created is False
+    assert second["id"] == first["id"]

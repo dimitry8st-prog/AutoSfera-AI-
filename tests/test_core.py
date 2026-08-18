@@ -57,9 +57,9 @@ def test_agent_section_access_least_privilege():
     assert not any(d.section == "sales" for d in support_docs)
 
 
-def test_sixteen_skills_registered():
+def test_seventeen_skills_registered():
     registry = build_skill_registry()
-    assert len(registry) == 16
+    assert len(registry) == 17
     by_agent = {}
     for skill in registry.values():
         by_agent.setdefault(skill.agent, 0)
@@ -68,8 +68,15 @@ def test_sixteen_skills_registered():
         "SALES_AGENT": 4,
         "SUPPORT_AGENT": 4,
         "SERVICE_AGENT": 4,
-        "EMPLOYEE_AGENT": 4,
+        "EMPLOYEE_AGENT": 5,
     }
+
+
+def test_competitor_research_is_employee_only():
+    registry = build_skill_registry()
+    assert registry["competitor_research"].agent == "EMPLOYEE_AGENT"
+    router = SkillRouter(registry)
+    assert router.select("EMPLOYEE_AGENT", "Исследуй конкурента example.com").id == "competitor_research"
 
 
 def test_rag_retrieves_sales_model():
