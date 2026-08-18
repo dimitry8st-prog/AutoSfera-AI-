@@ -4,6 +4,7 @@ import json
 import re
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 from autonova.config import get_settings
 from autonova.logging import get_logger
@@ -125,6 +126,49 @@ class KnowledgeBase:
             if doc.id == doc_id:
                 return doc
         return None
+
+    def publish_approved(
+        self,
+        *,
+        job_id: str,
+        title: str,
+        content: str,
+        sources: list[dict[str, Any]],
+    ) -> tuple[Document, int]:
+        """Publish a reviewed research result as a versioned internal KB document."""
+        approved_dir = self.root / "approved"
+        approved_dir.mkdir(parents=True, exist_ok=True)
+        safe_job_id = re.sub(r"[^a-zA-Z0-9-]", "", job_id)
+        existing = sorted(approved_dir.glob(f"{safe_job_id}.v*.json"))
+        version = len(existing) + 1
+        doc_id = f"research-{safe_job_id}-v{version}"
+        citations = "\n".join(
+            f"- {source.get('title') or source.get('url')}: {source.get('url')}"
+            for source in sources
+            if source.get("url")
+        )
+        full_content = content.strip()
+        if citations:
+            full_content += f"\n\nИсточники:\n{citations}"
+        payload = {
+            "section": "internal",
+            "documents": [{
+                "id": doc_id,
+                "title": title.strip() or "Исследование конкурента",
+                "content": full_content,
+                "tags": ["competitor_research", "approved", f"version:{version}"],
+                "agent": "EMPLOYEE_AGENT",
+            }],
+        }
+        target = approved_dir / f"{safe_job_id}.v{version}.json"
+        temporary = target.with_suffix(".tmp")
+        temporary.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+        temporary.replace(target)
+        self.reload()
+        document = self.get(doc_id)
+        if document is None:
+            raise RuntimeError("approved document was not loaded")
+        return document, version
 
 
 _TOKEN_RE = re.compile(r"[a-zA-Zа-яА-ЯёЁ0-9\-]+", re.UNICODE)

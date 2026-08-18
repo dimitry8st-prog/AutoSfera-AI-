@@ -32,6 +32,7 @@ body {
 }
 
 .top, .layout { position: relative; z-index: 1; }
+.hidden { display: none !important; }
 
 .top {
   display: flex;
@@ -62,6 +63,9 @@ body {
 .brand-sub { margin: 0.1rem 0 0; color: var(--muted); font-size: 0.85rem; }
 
 .header-actions { display: flex; gap: 0.6rem; align-items: center; flex-wrap: wrap; }
+.view-nav { display: flex; gap: 0.35rem; padding: 0.25rem; border: 1px solid var(--line); border-radius: 0.7rem; }
+.view-nav button { border: 0; padding: 0.45rem 0.75rem; }
+.view-nav button.active { background: rgba(226,177,90,0.17); color: var(--accent); }
 button, .agent-badge {
   border: 1px solid var(--line);
   background: rgba(255,255,255,0.04);
@@ -89,7 +93,13 @@ button.ghost { opacity: 0.9; }
   min-height: calc(100vh - 5rem);
 }
 
-.layout.kb-open { grid-template-columns: 1.4fr 1fr; }
+.app-view { width: 100%; }
+#chatView { display: grid; grid-template-columns: minmax(0, 1fr); gap: 1rem; }
+#chatView:has(.kb-panel:not(.hidden)) { grid-template-columns: 1.4fr 1fr; }
+.section-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; padding: 1rem 1.2rem; border-bottom: 1px solid var(--line); }
+.section-head h1 { margin: 0.2rem 0 0; font: 700 clamp(1.15rem, 2vw, 1.6rem)/1.2 "Space Grotesk", sans-serif; }
+.section-head > div:last-child { display: flex; gap: 0.5rem; }
+.eyebrow { color: var(--accent); text-transform: uppercase; letter-spacing: 0.12em; font-size: 0.7rem; }
 
 .chat-panel, .kb-panel {
   background: var(--panel);
@@ -176,6 +186,32 @@ button.ghost { opacity: 0.9; }
 }
 .kb-doc strong { color: var(--ink); display: block; margin-bottom: 0.2rem; }
 
+#managerView, #researchView { background: var(--panel); border: 1px solid var(--line); border-radius: 1rem; min-height: 70vh; overflow: hidden; }
+.metrics { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.8rem; padding: 1rem 1.2rem; }
+.metrics article { border: 1px solid var(--line); border-radius: 0.8rem; padding: 1rem; background: rgba(255,255,255,0.035); }
+.metrics strong, .metrics span { display: block; }
+.metrics strong { color: var(--accent); font: 700 1.75rem "Space Grotesk", sans-serif; }
+.metrics span { color: var(--muted); font-size: 0.8rem; margin-top: 0.2rem; }
+.table-wrap { overflow-x: auto; padding: 0 1.2rem 1.2rem; }
+table { width: 100%; border-collapse: collapse; min-width: 760px; }
+th, td { padding: 0.75rem; text-align: left; border-bottom: 1px solid var(--line); }
+th { color: var(--muted); font-size: 0.75rem; text-transform: uppercase; }
+td small { display: block; color: var(--muted); }
+select, td input, .research-form input, dialog input { width: 100%; border: 1px solid var(--line); background: rgba(0,0,0,0.25); color: var(--ink); border-radius: 0.5rem; padding: 0.55rem; font: inherit; }
+.research-form { display: flex; gap: 0.6rem; padding: 1.2rem 1.2rem 0.4rem; }
+.research-form input { flex: 1; }
+.job-list { display: grid; gap: 0.8rem; padding: 1.2rem; }
+.job-card { border: 1px solid var(--line); border-radius: 0.8rem; padding: 1rem; background: rgba(255,255,255,0.035); }
+.job-card > div { display: flex; justify-content: space-between; gap: 0.8rem; }
+.job-card span { color: var(--muted); font-size: 0.78rem; }
+dialog { color: var(--ink); background: #102a36; border: 1px solid var(--line); border-radius: 1rem; width: min(26rem, calc(100% - 2rem)); }
+dialog::backdrop { background: rgba(0,0,0,0.65); backdrop-filter: blur(4px); }
+dialog form { display: grid; gap: 0.9rem; }
+dialog h2 { margin: 0; }
+dialog label { display: grid; gap: 0.35rem; color: var(--muted); }
+.dialog-actions { display: flex; justify-content: flex-end; gap: 0.5rem; }
+.error { color: #ff8c8c; min-height: 1.2rem; margin: 0; }
+
 .typing span {
   display: inline-block;
   width: 0.35rem; height: 0.35rem; margin-right: 0.2rem;
@@ -203,7 +239,10 @@ button.ghost { opacity: 0.9; }
 }
 
 @media (max-width: 860px) {
-  .layout.kb-open { grid-template-columns: 1fr; }
+  #chatView:has(.kb-panel:not(.hidden)) { grid-template-columns: 1fr; }
   .brand-sub { display: none; }
   .top { align-items: flex-start; flex-direction: column; }
+  .section-head { flex-direction: column; }
+  .metrics { grid-template-columns: 1fr; }
+  .research-form { flex-direction: column; }
 }

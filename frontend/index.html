@@ -12,45 +12,44 @@
 <body>
   <div class="atmosphere" aria-hidden="true"></div>
   <header class="top">
-    <div class="brand">
-      <span class="brand-mark">AS</span>
-      <div>
-        <p class="brand-name">AutoSfera AI</p>
-        <p class="brand-sub">Единый интеллект автодилера</p>
-      </div>
-    </div>
-    <div class="header-actions">
-      <span id="agentBadge" class="agent-badge">Ожидание маршрутизации</span>
-      <button id="resetBtn" type="button">Новый чат</button>
-      <button id="kbBtn" type="button" class="ghost">База знаний</button>
-    </div>
+    <div class="brand"><span class="brand-mark">AS</span><div><p class="brand-name">AutoSfera AI</p><p class="brand-sub">Единый интеллект автодилера</p></div></div>
+    <nav class="view-nav" aria-label="Разделы платформы">
+      <button type="button" data-view="chatView" class="active">AI-центр</button>
+      <button type="button" data-view="managerView" class="staff-only hidden">Заявки</button>
+      <button type="button" data-view="researchView" class="employee-only hidden">Исследования</button>
+    </nav>
+    <div class="header-actions"><span id="agentBadge" class="agent-badge">Ожидание маршрутизации</span><button id="loginBtn" type="button" class="ghost">Войти сотрудником</button><button id="logoutBtn" type="button" class="ghost hidden">Выйти</button></div>
   </header>
 
   <main class="layout">
-    <section class="chat-panel" id="chatPanel">
-      <div id="messages" class="messages" aria-live="polite"></div>
-      <div class="composer">
-        <div class="quick" id="quickReplies">
-          <button type="button" data-q="Хочу купить кроссовер">Кроссовер</button>
-          <button type="button" data-q="Статус заказа АН-2024-0512">Статус заказа</button>
-          <button type="button" data-q="Вопрос по гарантии на кузов">Гарантия</button>
-          <button type="button" data-q="Лизинг для юридических лиц на 5 авто">Лизинг B2B</button>
-          <button type="button" data-q="Найди внутренний регламент обработки нового лида">Сотрудникам</button>
+    <section id="chatView" class="app-view active">
+      <div class="chat-panel">
+        <div class="section-head"><div><span class="eyebrow">Четыре специализированных агента</span><h1>От вопроса клиента до действия менеджера</h1></div><div><button id="resetBtn" type="button">Новый чат</button><button id="kbBtn" type="button" class="ghost">База знаний</button></div></div>
+        <div id="messages" class="messages" aria-live="polite"></div>
+        <div class="composer">
+          <div class="quick" id="quickReplies"><button type="button" data-q="Хочу купить кроссовер">Подобрать авто</button><button type="button" data-q="Статус заказа АН-2024-0512">Статус заказа</button><button type="button" data-q="Вопрос по гарантии на кузов">Гарантия</button><button type="button" data-q="Лизинг для юридических лиц на 5 авто">Лизинг B2B</button><button type="button" class="employee-only hidden" data-q="Исследуй конкурента и подготовь черновик">Конкурент</button></div>
+          <form id="chatForm"><input id="messageInput" type="text" placeholder="Напишите сообщение..." autocomplete="off" required /><button type="submit">Отправить</button></form>
+          <p class="disclaimer">Демонстрационный контур использует вымышленные данные. Важные решения подтверждает сотрудник.</p>
         </div>
-        <form id="chatForm">
-          <input id="messageInput" type="text" placeholder="Напишите сообщение..." autocomplete="off" required />
-          <button type="submit">Отправить</button>
-        </form>
-        <p class="disclaimer">Вы общаетесь с ИИ-ассистентом AutoSfera AI. Демо-контур использует вымышленные данные.</p>
       </div>
+      <aside class="kb-panel hidden" id="kbPanel"><h2>База знаний</h2><div id="kbContent"></div></aside>
     </section>
 
-    <aside class="kb-panel hidden" id="kbPanel">
-      <h2>Knowledge Base</h2>
-      <div id="kbContent"></div>
-    </aside>
+    <section id="managerView" class="app-view hidden">
+      <div class="section-head"><div><span class="eyebrow">CRM-слой</span><h1>Воронка заявок</h1></div><button id="refreshManager" type="button">Обновить</button></div>
+      <div id="metrics" class="metrics"></div>
+      <div class="table-wrap"><table><thead><tr><th>Тип</th><th>Клиент</th><th>Автомобиль</th><th>Статус</th><th>Ответственный</th><th>Действие</th></tr></thead><tbody id="requestsBody"></tbody></table></div>
+    </section>
+
+    <section id="researchView" class="app-view hidden">
+      <div class="section-head"><div><span class="eyebrow">Human-in-the-loop</span><h1>Исследования конкурентов</h1></div></div>
+      <form id="researchForm" class="research-form"><input id="researchQuery" required minlength="5" placeholder="Компания, продукт или сайт конкурента" /><button type="submit">Создать задачу</button></form>
+      <p class="disclaimer">n8n управляет доставкой и повторами, Langflow выполняет ограниченный анализ. Результат не публикуется без approve.</p>
+      <div id="researchJobs" class="job-list"></div>
+    </section>
   </main>
 
+  <dialog id="loginDialog"><form id="loginForm" method="dialog"><h2>Вход сотрудника</h2><label>Логин<input id="username" value="employee" autocomplete="username" /></label><label>Пароль<input id="password" type="password" autocomplete="current-password" /></label><p id="loginError" class="error"></p><div class="dialog-actions"><button value="cancel" type="button" id="cancelLogin" class="ghost">Отмена</button><button type="submit">Войти</button></div></form></dialog>
   <script src="/static/app.js"></script>
 </body>
 </html>

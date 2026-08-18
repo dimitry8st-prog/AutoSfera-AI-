@@ -2,7 +2,7 @@
 
 > **Проект подготовлен для участия в OpenAI Build Week 2026 — глобальном хакатоне по созданию решений с Codex и GPT-5.6.**
 
-Коммерческий MVP для одного автосалона с архитектурой, готовой к масштабированию на дилерскую сеть. Текущая версия **2.0.0** добавляет Employee Agent, постоянное SQLite-хранилище, бизнес-заявки, аналитику и обязательный `dealer_id` для изоляции данных будущих филиалов.
+Коммерческий демо-пилот для одного автосалона с архитектурой, готовой к масштабированию на дилерскую сеть. Версия **2.1.0** добавляет роли, постоянные сессии, кабинет менеджера и защищённый контур исследований с обязательным подтверждением человеком.
 
 Актуальная спецификация пилота: [`docs/COMMERCIAL_PILOT.md`](docs/COMMERCIAL_PILOT.md).
 
@@ -10,7 +10,7 @@
 
 ## Возможности версии 2.0
 
-- 4 агента и 16 skills: продажи, поддержка, сервис и внутренний помощник сотрудников;
+- 4 агента и 17 skills: продажи, поддержка, сервис, внутренний помощник и исследование конкурентов;
 - сохранение диалогов, лидов, тест-драйвов и сервисных заявок;
 - API `/api/requests` и `/api/analytics/summary`;
 - конфигурация одного салона через `DEALER_ID` и `DEALER_NAME`;
@@ -71,7 +71,7 @@
 |---|---|
 | AI Orchestrator (маршрутизация) | ✅ |
 | Sales / Support / Service / Employee Agents | ✅ |
-| 16 Skills (по 4 на агента) | ✅ |
+| 17 Skills (4 клиентских набора + `competitor_research`) | ✅ |
 | System Prompts (`prompts/`) | ✅ |
 | Knowledge Base (JSON, в т.ч. internal) | ✅ |
 | RAG (TF-IDF, без внешней vector DB) | ✅ |
@@ -81,9 +81,12 @@
 | Логирование (файл + JSONL сессий) | ✅ |
 | pytest-покрытие ядра, API и storage | ✅ |
 | Каналы Telegram / WhatsApp / Email / CRM | 🟡 каркас API без внешних Bot API |
-| Аутентификация, live CRM, vector DB | ❌ вне MVP (см. roadmap 2.1) |
+| Подписанные токены и роли `admin` / `employee` | ✅ |
+| Постоянные сессии и кабинет заявок | ✅ |
+| Защищённый Job API n8n/Langflow + human approval | ✅ |
+| Live CRM/DMS и vector DB | ❌ вне демо-пилота |
 
-Соответствие пилоту: оркестратор, 4 агента, промпты, 16 Skills, KB, RAG, заявки, аналитика, изоляция `dealer_id`, эскалации, Least Privilege по разделам KB.
+Соответствие пилоту: оркестратор, 4 агента, 17 Skills, KB, RAG, заявки, аналитика, роли, изоляция `dealer_id`, эскалации и Least Privilege.
 
 ---
 
@@ -123,7 +126,8 @@
 
 1. Первое сообщение → Orchestrator возвращает агента (`SALES_AGENT` | `SUPPORT_AGENT` | `SERVICE_AGENT` | `EMPLOYEE_AGENT`).
 2. Дальнейшие сообщения в той же `session_id` обрабатывает выбранный агент.
-3. «Новый чат» / `POST /api/reset` сбрасывает агента и историю в памяти процесса.
+3. Состояние сессии сохраняется в SQLite и восстанавливается после перезапуска.
+4. «Новый чат» / `POST /api/reset` сбрасывает активного агента и историю.
 
 LLM по умолчанию: **`LLM_MODE=mock`** (офлайн, без ключа). Опционально — OpenAI-compatible Chat Completions.
 
@@ -160,7 +164,7 @@ uvicorn autonova.api.main:app --reload --app-dir src
 curl http://127.0.0.1:8000/health
 ```
 
-Ожидаемый ответ содержит `"status":"ok"`, четыре агента, `"skills":16`, `"version":"2.0.0"`, `dealer_id` и число документов KB.
+Ожидаемый ответ содержит `"status":"ok"`, четыре агента, `"skills":17`, `"version":"2.1.0"`, `dealer_id` и число документов KB.
 
 ---
 
@@ -184,6 +188,14 @@ cp .env.example .env
 | `LOG_LEVEL` | `INFO` | уровень логов |
 | `LOGS_DIR` | `logs/` | каталог логов |
 | `DIALOGUES_DIR` | `data/dialogues/` | JSONL диалогов |
+| `AUTH_SECRET` | demo-only | подпись JWT; обязательно заменить перед публикацией |
+| `DEMO_ADMIN_PASSWORD` | `admin-demo` | локальный вход администратора без `.env` |
+| `DEMO_EMPLOYEE_PASSWORD` | `employee-demo` | локальный вход сотрудника без `.env` |
+| `DEMO_SALES_PASSWORD` | `sales-demo` | локальный вход менеджера продаж без `.env` |
+| `DEMO_SERVICE_PASSWORD` | `service-demo` | локальный вход сервиса без `.env` |
+| `CORS_ORIGINS` | localhost | разрешённые источники через запятую |
+| `RESEARCH_WEBHOOK_URL` | — | защищённый webhook n8n |
+| `RESEARCH_WEBHOOK_SECRET` | demo-only | HMAC-подпись запросов и callback |
 
 Пример `.env` для реального LLM:
 
@@ -221,14 +233,18 @@ LOG_LEVEL=INFO
 | `GET` | `/` | веб-чат |
 | `GET` | `/health` | статус, агенты, skills, dealer, размер KB |
 | `GET` | `/api/agents` | метаданные агентов |
-| `GET` | `/api/skills` | список 16 skills |
-| `GET` | `/api/knowledge` | документы KB по разделам |
+| `GET` | `/api/skills` | список 17 skills |
+| `GET` | `/api/knowledge` | публичные разделы KB; внутренние — только сотрудникам |
 | `POST` | `/api/chat` | основное сообщение чата |
 | `POST` | `/api/reset` | сброс сессии |
 | `POST` | `/api/requests` | создать лид / тест-драйв / сервисную заявку |
-| `GET` | `/api/requests` | список заявок текущего салона |
-| `GET` | `/api/analytics/summary` | сводные показатели салона |
-| `POST` | `/api/channels/{name}` | stub-каналы: `telegram`, `whatsapp`, `email`, `crm` |
+| `POST` | `/api/auth/token` | локальный демонстрационный вход сотрудника |
+| `GET/PATCH` | `/api/requests` | защищённая воронка заявок текущего салона |
+| `GET` | `/api/analytics/summary` | защищённая сводка салона |
+| `POST/GET` | `/api/research/jobs` | асинхронные исследования с идемпотентностью |
+| `POST` | `/api/research/callback` | подписанный callback n8n |
+| `POST` | `/api/research/jobs/{id}/review` | approve/edit/reject перед публикацией в KB |
+| `POST` | `/api/channels/{name}` | защищённые stub-каналы интеграций |
 
 ### Пример: чат
 
@@ -312,6 +328,7 @@ Content-Type: application/json
 | `sales_coaching` | Sales Coaching | скрипты продаж, подсказки менеджеру |
 | `process_lookup` | Process Lookup | операционные процедуры |
 | `manager_escalation` | Manager Escalation | передача руководителю |
+| `competitor_research` | Competitor Research | защищённое исследование через n8n/Langflow |
 
 Промпт: `prompts/employee_agent.txt`
 
@@ -372,7 +389,7 @@ pytest --cov=autonova -q
 Основные проверки (`tests/`):
 
 - загрузка KB и Least Privilege;
-- регистрация ровно 16 skills;
+- регистрация ровно 17 skills;
 - RAG retrieval;
 - маршрутизация оркестратора (sales / support / service / employee / leasing);
 - сохранение агента в сессии и reset;
@@ -409,15 +426,17 @@ AutoSfera AI/
 ├── README.md
 ├── docs/COMMERCIAL_PILOT.md        # спецификация пилота 2.0
 ├── AutoNova_MVP_Documentation.md   # архив учебного MVP 1.1
-├── pyproject.toml                  # пакет autonova 2.0.0
+├── pyproject.toml                  # пакет autonova 2.1.0
 ├── .env.example
+├── contracts/                      # JSON Schema для n8n/Langflow
+├── integrations/                   # границы и правила n8n/Langflow
 ├── prompts/                        # system prompts (4 агента + orchestrator)
 ├── knowledge_base/                 # JSON Knowledge Base
 ├── src/autonova/
 │   ├── api/main.py                 # FastAPI
 │   ├── orchestrator/               # маршрутизация и сессии
 │   ├── agents/                     # Sales / Support / Service / Employee
-│   ├── skills/                     # 16 skills
+│   ├── skills/                     # 17 skills
 │   ├── storage/                    # SQLite (dealer_id)
 │   ├── rag/                        # retrieval
 │   ├── knowledge/                  # загрузка KB
@@ -442,11 +461,10 @@ AutoSfera AI/
 ## Ограничения
 
 1. RAG — учебный TF-IDF, не production vector DB.
-2. Активная сессия чата держится в памяти процесса; после рестарта RAM сбрасывается (история уже записана в SQLite/JSONL).
-3. Telegram / WhatsApp / Email / CRM — HTTP-заготовки без реальных webhook/Bot API.
-4. Нет аутентификации пользователей (roadmap 2.1).
-5. Все коммерческие и клиентские данные вымышлены.
-6. В mock-режиме маршрутизация и ответы детерминированы skills/KB; «живой» диалоговый стиль LLM включается через `LLM_MODE=openai`, фактология по-прежнему опирается на Skills + RAG.
+2. Telegram / WhatsApp / Email / CRM — HTTP-заготовки без реальных Bot API и CRM-учётных данных.
+3. Демонстрационный вход не заменяет корпоративный Identity Provider; пароли и секреты из `.env.example` необходимо заменить.
+4. Все коммерческие и клиентские данные вымышлены.
+5. В mock-режиме маршрутизация и ответы детерминированы skills/KB; `LLM_MODE=openai` меняет стиль, но не источник фактов.
 
 ---
 
@@ -463,7 +481,7 @@ AutoSfera AI/
 
 ---
 
-*AutoSfera AI 2.0.0 — коммерческий MVP-пилот. Демо-данные вымышлены.*
+*AutoSfera AI 2.1.0 — защищённый коммерческий демо-пилот. Демо-данные вымышлены.*
 
 
 ---

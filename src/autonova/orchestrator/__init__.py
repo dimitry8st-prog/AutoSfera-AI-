@@ -10,6 +10,8 @@ from autonova.llm import LLMClient, extract_json_object, get_llm_client
 from autonova.logging import DialogueLogger, get_logger, setup_logging
 from autonova.rag import RAGRetriever
 from autonova.skills import SkillRouter, build_skill_registry
+from autonova.storage import PlatformStore
+from autonova.config import get_settings
 
 logger = get_logger("autonova.orchestrator")
 
@@ -35,6 +37,7 @@ class TurnResult:
     escalated: bool
     escalation_target: str | None
     rag_ids: list[str]
+    collected_fields: dict[str, Any] = field(default_factory=dict)
     routing_reason: str | None = None
 
 
@@ -47,12 +50,16 @@ class AIOrchestrator:
         rag: RAGRetriever | None = None,
         skills: SkillRouter | None = None,
         llm: LLMClient | None = None,
+        store: PlatformStore | None = None,
+        dealer_id: str | None = None,
     ) -> None:
         setup_logging()
         self.kb = knowledge_base or KnowledgeBase()
         self.rag = rag or RAGRetriever(self.kb)
         self.skills = skills or SkillRouter(build_skill_registry())
         self.llm = llm or get_llm_client()
+        self.store = store
+        self.dealer_id = dealer_id or get_settings().dealer_id
         self.agents: dict[str, BaseAgent] = build_agents(self.rag, self.skills)
         self.system_prompt = load_prompt("orchestrator.txt")
         self.sessions: dict[str, SessionState] = {}
@@ -65,15 +72,32 @@ class AIOrchestrator:
     ) -> SessionState:
         sid = session_id or str(uuid4())
         if sid not in self.sessions:
-            self.sessions[sid] = SessionState(session_id=sid, channel=channel)
+            persisted = self.store.load_session(self.dealer_id, sid) if self.store else None
+            self.sessions[sid] = SessionState(
+                session_id=sid,
+                channel=persisted["channel"] if persisted else channel,
+                active_agent=persisted["active_agent"] if persisted else None,
+                history=persisted["history"] if persisted else [],
+            )
             logger.info("Created session %s channel=%s", sid, channel)
         return self.sessions[sid]
 
     def reset_session(self, session_id: str) -> SessionState:
         channel = self.sessions.get(session_id, SessionState(session_id)).channel
         self.sessions[session_id] = SessionState(session_id=session_id, channel=channel)
+        self._persist(self.sessions[session_id])
         logger.info("Reset session %s", session_id)
         return self.sessions[session_id]
+
+    def _persist(self, session: SessionState) -> None:
+        if self.store:
+            self.store.save_session(
+                self.dealer_id,
+                session.session_id,
+                session.channel,
+                session.active_agent,
+                session.history,
+            )
 
     def route(self, message: str) -> dict[str, str]:
         raw = self.llm.complete(
@@ -97,6 +121,7 @@ class AIOrchestrator:
         message: str,
         session_id: str | None = None,
         channel: str = "web",
+        allowed_agents: set[str] | None = None,
     ) -> TurnResult:
         session = self.get_or_create_session(session_id, channel=channel)
         dialogue = DialogueLogger(session.session_id)
@@ -116,6 +141,12 @@ class AIOrchestrator:
                 greeting=greeting,
             )
 
+        if allowed_agents is not None and session.active_agent not in allowed_agents:
+            denied_agent = session.active_agent
+            session.active_agent = None
+            self._persist(session)
+            raise PermissionError(f"agent {denied_agent} requires an employee role")
+
         agent = self.agents[session.active_agent]
         agent_reply: AgentReply = agent.handle(
             message,
@@ -129,6 +160,7 @@ class AIOrchestrator:
 
         session.history.append({"role": "user", "content": message})
         session.history.append({"role": "assistant", "content": reply_text})
+        self._persist(session)
 
         return TurnResult(
             session_id=session.session_id,
@@ -141,5 +173,6 @@ class AIOrchestrator:
             escalated=agent_reply.escalated,
             escalation_target=agent_reply.escalation_target,
             rag_ids=agent_reply.rag_ids,
+            collected_fields=agent_reply.collected_fields,
             routing_reason=routing_reason,
         )

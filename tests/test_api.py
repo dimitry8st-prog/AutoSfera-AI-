@@ -24,12 +24,19 @@ def test_health_and_chat_flow(monkeypatch, tmp_path):
     assert health.status_code == 200
     body = health.json()
     assert body["status"] == "ok"
-    assert body["skills"] == 16
+    assert body["skills"] == 17
     assert body["agents"] == ["SALES_AGENT", "SUPPORT_AGENT", "SERVICE_AGENT", "EMPLOYEE_AGENT"]
     assert body["dealer_id"] == "main-salon"
 
     skills = client.get("/api/skills").json()
-    assert len(skills["skills"]) == 16
+    assert len(skills["skills"]) == 17
+
+    login = client.post(
+        "/api/auth/token",
+        json={"username": "employee", "password": "employee-demo"},
+    )
+    assert login.status_code == 200
+    staff_headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
 
     chat = client.post("/api/chat", json={"message": "Хочу купить кроссовер"})
     assert chat.status_code == 200
@@ -45,12 +52,19 @@ def test_health_and_chat_flow(monkeypatch, tmp_path):
     tg = client.post(
         "/api/channels/telegram",
         json={"text": "Статус заказа АН-2024-0388", "chat_id": "tg-1"},
+        headers=staff_headers,
     )
     assert tg.status_code == 200
     assert tg.json()["agent"] == "SUPPORT_AGENT"
     assert tg.json()["channel"] == "telegram"
 
-    employee = client.post("/api/chat", json={"message": "Найди внутренний регламент обработки лида"})
+    denied_employee = client.post("/api/chat", json={"message": "Найди внутренний регламент обработки лида"})
+    assert denied_employee.status_code == 403
+    employee = client.post(
+        "/api/chat",
+        json={"message": "Найди внутренний регламент обработки лида"},
+        headers=staff_headers,
+    )
     assert employee.status_code == 200
     assert employee.json()["agent"] == "EMPLOYEE_AGENT"
 
@@ -60,8 +74,9 @@ def test_health_and_chat_flow(monkeypatch, tmp_path):
     )
     assert created.status_code == 201
     assert created.json()["status"] == "new"
-    assert len(client.get("/api/requests").json()["items"]) == 1
+    assert client.get("/api/requests").status_code == 403
+    assert len(client.get("/api/requests", headers=staff_headers).json()["items"]) == 1
 
-    analytics = client.get("/api/analytics/summary").json()
+    analytics = client.get("/api/analytics/summary", headers=staff_headers).json()
     assert analytics["conversations"] == 2
     assert analytics["requests"] == 1

@@ -1,121 +1,31 @@
-const messagesEl = document.getElementById("messages");
-const form = document.getElementById("chatForm");
-const input = document.getElementById("messageInput");
-const resetBtn = document.getElementById("resetBtn");
-const kbBtn = document.getElementById("kbBtn");
-const kbPanel = document.getElementById("kbPanel");
-const kbContent = document.getElementById("kbContent");
-const agentBadge = document.getElementById("agentBadge");
-const layout = document.querySelector(".layout");
-
+const $ = (selector) => document.querySelector(selector);
+const $$ = (selector) => [...document.querySelectorAll(selector)];
+const messagesEl = $("#messages");
 let sessionId = localStorage.getItem("autosfera_session") || null;
+let token = sessionStorage.getItem("autosfera_token") || "";
+let role = sessionStorage.getItem("autosfera_role") || "guest";
+const escapeHTML = (value) => String(value ?? "").replace(/[&<>'"]/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;" })[char]);
 
-function addMessage(role, text, meta = "") {
-  const div = document.createElement("div");
-  div.className = `msg ${role}`;
-  if (meta) {
-    const m = document.createElement("span");
-    m.className = "meta";
-    m.textContent = meta;
-    div.appendChild(m);
-  }
-  div.appendChild(document.createTextNode(text));
-  messagesEl.appendChild(div);
-  messagesEl.scrollTop = messagesEl.scrollHeight;
-}
+function headers(json = false) { const value = json ? { "Content-Type": "application/json" } : {}; if (token) value.Authorization = `Bearer ${token}`; return value; }
+async function api(path, options = {}) { const response = await fetch(path, { ...options, headers: { ...headers(Boolean(options.body)), ...(options.headers || {}) } }); if (!response.ok) { const error = await response.json().catch(() => ({ detail: response.statusText })); throw new Error(error.detail || "Ошибка запроса"); } return response.json(); }
+function addMessage(kind, text, meta = "") { const node = document.createElement("div"); node.className = `msg ${kind}`; if (meta) { const label = document.createElement("span"); label.className = "meta"; label.textContent = meta; node.append(label); } node.append(document.createTextNode(text)); messagesEl.append(node); messagesEl.scrollTop = messagesEl.scrollHeight; }
+function setTyping(on) { $("#typing")?.remove(); if (!on) return; const node = document.createElement("div"); node.id = "typing"; node.className = "msg bot typing"; node.innerHTML = "<span></span><span></span><span></span>"; messagesEl.append(node); }
+async function sendMessage(text) { addMessage("user", text); setTyping(true); try { const data = await api("/api/chat", { method: "POST", body: JSON.stringify({ message: text, session_id: sessionId, channel: "web" }) }); sessionId = data.session_id; localStorage.setItem("autosfera_session", sessionId); $("#agentBadge").textContent = data.agent_label; setTyping(false); addMessage("bot", data.reply, [data.agent_label, data.skill, data.escalated ? "эскалация" : ""].filter(Boolean).join(" · ")); } catch (error) { setTyping(false); addMessage("bot", error.message); } }
+function applyRole() { const staff = ["admin", "sales", "service", "employee"].includes(role); const employee = ["admin", "employee"].includes(role); $$(".staff-only").forEach((node) => node.classList.toggle("hidden", !staff)); $$(".employee-only").forEach((node) => node.classList.toggle("hidden", !employee)); $("#loginBtn").classList.toggle("hidden", staff); $("#logoutBtn").classList.toggle("hidden", !staff); $("#agentBadge").title = `Роль: ${role}`; }
+function showView(id) { $$(".app-view").forEach((node) => node.classList.toggle("hidden", node.id !== id)); $$("[data-view]").forEach((node) => node.classList.toggle("active", node.dataset.view === id)); if (id === "managerView") loadManager(); if (id === "researchView") loadResearch(); }
+async function loadManager() { try { const [requests, analytics] = await Promise.all([api("/api/requests"), api("/api/analytics/summary")]); $("#metrics").innerHTML = [["Диалоги", analytics.conversations], ["Заявки", analytics.requests], ["Эскалации", analytics.escalations]].map(([label, value]) => `<article><strong>${escapeHTML(value)}</strong><span>${escapeHTML(label)}</span></article>`).join(""); $("#requestsBody").replaceChildren(...requests.items.map((item) => { const row = document.createElement("tr"); row.innerHTML = `<td>${escapeHTML(item.kind)}</td><td>${escapeHTML(item.customer_name || "—")}<small>${escapeHTML(item.phone || "")}</small></td><td>${escapeHTML(item.vehicle || "—")}</td><td><select data-status="${escapeHTML(item.id)}">${["new","qualified","scheduled","assigned","done","cancelled"].map((s) => `<option ${s === item.status ? "selected" : ""}>${s}</option>`).join("")}</select></td><td><input data-assignee="${escapeHTML(item.id)}" value="${escapeHTML(item.assigned_to || "")}" placeholder="Менеджер" /></td><td><button data-save="${escapeHTML(item.id)}">Сохранить</button></td>`; return row; })); } catch (error) { $("#requestsBody").innerHTML = `<tr><td colspan="6">${escapeHTML(error.message)}</td></tr>`; } }
+async function loadResearch() { try { const data = await api("/api/research/jobs"); $("#researchJobs").replaceChildren(...data.items.map((job) => { const card = document.createElement("article"); card.className = "job-card"; card.innerHTML = `<div><strong>${escapeHTML(job.query)}</strong><span>${escapeHTML(job.status)} · trace ${escapeHTML(job.trace_id.slice(0, 8))}</span></div><p>${escapeHTML(job.result?.summary || job.result?.content || job.error || "Ожидает обработки")}</p>${job.status === "review" ? `<div><button data-review="approve" data-job="${escapeHTML(job.id)}">Approve</button><button class="ghost" data-review="reject" data-job="${escapeHTML(job.id)}">Reject</button></div>` : ""}`; return card; })); } catch (error) { $("#researchJobs").textContent = error.message; } }
 
-function setTyping(on) {
-  const existing = document.getElementById("typing");
-  if (existing) existing.remove();
-  if (!on) return;
-  const div = document.createElement("div");
-  div.id = "typing";
-  div.className = "msg bot typing";
-  div.innerHTML = "<span></span><span></span><span></span>";
-  messagesEl.appendChild(div);
-  messagesEl.scrollTop = messagesEl.scrollHeight;
-}
-
-async function sendMessage(text) {
-  addMessage("user", text);
-  setTyping(true);
-  try {
-    const res = await fetch("/api/chat", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ message: text, session_id: sessionId, channel: "web" }),
-    });
-    if (!res.ok) throw new Error(await res.text());
-    const data = await res.json();
-    sessionId = data.session_id;
-    localStorage.setItem("autosfera_session", sessionId);
-    agentBadge.textContent = data.agent_label;
-    const meta = [
-      data.agent_label,
-      data.skill ? `skill: ${data.skill}` : null,
-      data.escalated ? "эскалация" : null,
-    ].filter(Boolean).join(" · ");
-    setTyping(false);
-    addMessage("bot", data.reply, meta);
-  } catch (err) {
-    setTyping(false);
-    addMessage("bot", `Ошибка: ${err.message}`);
-  }
-}
-
-form.addEventListener("submit", (e) => {
-  e.preventDefault();
-  const text = input.value.trim();
-  if (!text) return;
-  input.value = "";
-  sendMessage(text);
-});
-
-document.getElementById("quickReplies").addEventListener("click", (e) => {
-  const btn = e.target.closest("button[data-q]");
-  if (!btn) return;
-  sendMessage(btn.dataset.q);
-});
-
-resetBtn.addEventListener("click", async () => {
-  if (sessionId) {
-    await fetch("/api/reset", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ session_id: sessionId }),
-    });
-  }
-  sessionId = null;
-  localStorage.removeItem("autosfera_session");
-  messagesEl.innerHTML = "";
-  agentBadge.textContent = "Ожидание маршрутизации";
-  addMessage("bot", "Новый диалог. Я ИИ-оркестратор AutoSfera AI — опишите ваш запрос.");
-});
-
-kbBtn.addEventListener("click", async () => {
-  const open = kbPanel.classList.toggle("hidden") === false;
-  layout.classList.toggle("kb-open", open);
-  if (!open) return;
-  const res = await fetch("/api/knowledge");
-  const data = await res.json();
-  kbContent.replaceChildren();
-  Object.entries(data.sections).forEach(([section, docs]) => {
-    const wrap = document.createElement("div");
-    wrap.className = "kb-section";
-    const title = document.createElement("h3");
-    title.textContent = section;
-    wrap.appendChild(title);
-    docs.forEach((doc) => {
-      const item = document.createElement("div");
-      item.className = "kb-doc";
-      const strong = document.createElement("strong");
-      strong.textContent = doc.title;
-      item.appendChild(strong);
-      item.appendChild(document.createTextNode(doc.content));
-      wrap.appendChild(item);
-    });
-    kbContent.appendChild(wrap);
-  });
-});
-
-addMessage("bot", "Здравствуйте! Вы общаетесь с AutoSfera AI. Опишите задачу — оркестратор подключит нужного ассистента.");
+$("#chatForm").addEventListener("submit", (event) => { event.preventDefault(); const text = $("#messageInput").value.trim(); if (text) { $("#messageInput").value = ""; sendMessage(text); } });
+$("#quickReplies").addEventListener("click", (event) => { const button = event.target.closest("[data-q]"); if (button) sendMessage(button.dataset.q); });
+$("#resetBtn").addEventListener("click", async () => { if (sessionId) await api("/api/reset", { method: "POST", body: JSON.stringify({ session_id: sessionId }) }).catch(() => null); sessionId = null; localStorage.removeItem("autosfera_session"); messagesEl.innerHTML = ""; $("#agentBadge").textContent = "Ожидание маршрутизации"; addMessage("bot", "Новый диалог. Опишите задачу — оркестратор подключит нужного ассистента."); });
+$("#kbBtn").addEventListener("click", async () => { const panel = $("#kbPanel"); panel.classList.toggle("hidden"); if (panel.classList.contains("hidden")) return; const data = await api("/api/knowledge"); $("#kbContent").innerHTML = Object.entries(data.sections).map(([section, docs]) => `<section class="kb-section"><h3>${escapeHTML(section)}</h3>${docs.map((doc) => `<div class="kb-doc"><strong>${escapeHTML(doc.title)}</strong>${escapeHTML(doc.content)}</div>`).join("")}</section>`).join(""); });
+$$('[data-view]').forEach((button) => button.addEventListener("click", () => showView(button.dataset.view)));
+$("#loginBtn").addEventListener("click", () => $("#loginDialog").showModal()); $("#cancelLogin").addEventListener("click", () => $("#loginDialog").close());
+$("#logoutBtn").addEventListener("click", () => { token = ""; role = "guest"; sessionStorage.clear(); applyRole(); showView("chatView"); });
+$("#loginForm").addEventListener("submit", async (event) => { event.preventDefault(); try { const data = await api("/api/auth/token", { method: "POST", body: JSON.stringify({ username: $("#username").value, password: $("#password").value }) }); token = data.access_token; role = data.role; sessionStorage.setItem("autosfera_token", token); sessionStorage.setItem("autosfera_role", role); $("#loginDialog").close(); applyRole(); } catch (error) { $("#loginError").textContent = error.message; } });
+$("#refreshManager").addEventListener("click", loadManager);
+$("#requestsBody").addEventListener("click", async (event) => { const button = event.target.closest("[data-save]"); if (!button) return; const id = button.dataset.save; await api(`/api/requests/${id}`, { method: "PATCH", body: JSON.stringify({ status: $(`[data-status='${id}']`).value, assigned_to: $(`[data-assignee='${id}']`).value }) }); loadManager(); });
+$("#researchForm").addEventListener("submit", async (event) => { event.preventDefault(); const query = $("#researchQuery").value.trim(); await api("/api/research/jobs", { method: "POST", body: JSON.stringify({ query, idempotency_key: `${Date.now()}-${crypto.randomUUID()}` }) }); $("#researchQuery").value = ""; loadResearch(); });
+$("#researchJobs").addEventListener("click", async (event) => { const button = event.target.closest("[data-review]"); if (!button) return; await api(`/api/research/jobs/${button.dataset.job}/review`, { method: "POST", body: JSON.stringify({ action: button.dataset.review }) }); loadResearch(); });
+applyRole(); addMessage("bot", "Здравствуйте! AutoSfera AI объединяет продажи, поддержку, сервис и внутреннюю работу автодилера.");
