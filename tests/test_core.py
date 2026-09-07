@@ -55,6 +55,8 @@ def test_agent_section_access_least_privilege():
     assert not any(d.section == "service" for d in sales_docs)
     support_docs = kb.for_agent("SUPPORT_AGENT")
     assert not any(d.section == "sales" for d in support_docs)
+    assert not any(d.agent == "ORCHESTRATOR" for d in support_docs)
+    assert any(d.agent == "ORCHESTRATOR" for d in kb.for_agent("ORCHESTRATOR"))
 
 
 def test_seventeen_skills_registered():
@@ -86,6 +88,24 @@ def test_rag_retrieves_sales_model():
     assert any("drive" in h.document.id or "модель" in h.document.title.lower() or "Drive" in h.document.content for h in hits)
 
 
+@pytest.mark.parametrize(
+    ("phrase", "document_id"),
+    [
+        ("привет", "conversation-greeting"),
+        ("Здравствуйте!", "conversation-greeting"),
+        ("спасибо большое", "conversation-thanks"),
+        ("до свидания", "conversation-farewell"),
+        ("как дела?", "conversation-wellbeing"),
+        ("кто ты?", "conversation-identity"),
+        ("что ты умеешь?", "conversation-capabilities"),
+    ],
+)
+def test_rag_retrieves_common_phrases(phrase: str, document_id: str):
+    rag = RAGRetriever(KnowledgeBase())
+    hits = rag.retrieve(phrase, "ORCHESTRATOR")
+    assert any(hit.document.id == document_id for hit in hits)
+
+
 def test_rag_support_cannot_see_finance_prices_only_own_sections():
     rag = RAGRetriever(KnowledgeBase())
     hits = rag.retrieve("лизинг ставка", "SUPPORT_AGENT", min_score=0.01)
@@ -98,6 +118,50 @@ def test_orchestrator_routes_sales(orchestrator: AIOrchestrator):
     assert result.skill in {"vehicle_selection", "credit_leasing", "test_drive_booking", "trade_in"}
     assert "2 400 000" in result.reply or "Nova Drive" in result.reply
     assert result.greeting
+
+
+@pytest.mark.parametrize(
+    "phrase",
+    [
+        "привет",
+        "Здравствуйте!",
+        "Добрый вечер",
+        "спасибо большое",
+        "до свидания",
+        "как дела?",
+        "кто ты?",
+        "что ты умеешь?",
+    ],
+)
+def test_orchestrator_answers_common_phrases_without_escalation(
+    orchestrator: AIOrchestrator,
+    phrase: str,
+):
+    result = orchestrator.handle_message(phrase)
+    assert result.agent == "AI_ORCHESTRATOR"
+    assert result.agent_label == "AI Orchestrator"
+    assert result.skill == "common_phrases"
+    assert result.escalated is False
+    assert result.rag_ids
+    assert result.routing_reason.startswith("conversational_")
+
+
+def test_greeting_does_not_lock_session_to_sales(orchestrator: AIOrchestrator):
+    greeting = orchestrator.handle_message("привет")
+    assert orchestrator.sessions[greeting.session_id].active_agent is None
+
+    follow_up = orchestrator.handle_message(
+        "Вопрос по гарантии на кузов",
+        session_id=greeting.session_id,
+    )
+    assert follow_up.agent == "SERVICE_AGENT"
+    assert follow_up.skill == "warranty_consultation"
+
+
+def test_substantive_message_with_greeting_is_still_routed(orchestrator: AIOrchestrator):
+    result = orchestrator.handle_message("Привет, хочу купить кроссовер")
+    assert result.agent == "SALES_AGENT"
+    assert result.skill == "vehicle_selection"
 
 
 def test_orchestrator_routes_support_order(orchestrator: AIOrchestrator):

@@ -53,6 +53,7 @@ class Skill:
 # for retrieval scoring but are not dumped into replies by default).
 _ANSWER_SECTIONS = frozenset(
     {
+        "conversation",
         "sales",
         "customer_support",
         "service",

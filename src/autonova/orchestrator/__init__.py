@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from typing import Any
 from uuid import uuid4
@@ -13,6 +14,56 @@ from autonova.skills import SkillRouter, build_skill_registry
 from autonova.config import get_settings
 
 logger = get_logger("autonova.orchestrator")
+
+
+_CONVERSATIONAL_PHRASES: dict[str, frozenset[str]] = {
+    "greeting": frozenset({
+        "привет", "здравствуйте", "здравствуй", "здраствуйте", "приветствую",
+        "добрый день", "доброго дня", "доброе утро", "добрый вечер", "салют",
+        "хай", "hello", "hi", "привет как дела", "здравствуйте как дела",
+        "здравствуйте подскажите", "привет подскажите",
+    }),
+    "thanks": frozenset({
+        "спасибо", "спасибо большое", "большое спасибо", "благодарю",
+        "благодарю вас", "понятно спасибо", "хорошо спасибо",
+    }),
+    "farewell": frozenset({
+        "до свидания", "до встречи", "пока", "всего доброго", "всего хорошего",
+        "хорошего дня", "хорошего вечера", "до скорого", "bye",
+    }),
+    "wellbeing": frozenset({
+        "как дела", "как ты", "как настроение", "как поживаешь",
+    }),
+    "identity": frozenset({
+        "кто ты", "ты кто", "что ты такое", "ты бот", "это бот", "это человек",
+    }),
+    "capabilities": frozenset({
+        "что ты умеешь", "чем ты можешь помочь", "чем можешь помочь",
+        "что можешь", "помоги", "помощь", "help",
+    }),
+}
+
+_CONVERSATIONAL_DOCUMENTS = {
+    "greeting": "conversation-greeting",
+    "thanks": "conversation-thanks",
+    "farewell": "conversation-farewell",
+    "wellbeing": "conversation-wellbeing",
+    "identity": "conversation-identity",
+    "capabilities": "conversation-capabilities",
+}
+
+
+def _normalize_conversational_phrase(message: str) -> str:
+    words = re.findall(r"[a-zA-Zа-яА-ЯёЁ0-9]+", message.lower())
+    return " ".join(words)
+
+
+def _conversational_intent(message: str) -> str | None:
+    normalized = _normalize_conversational_phrase(message)
+    for intent, phrases in _CONVERSATIONAL_PHRASES.items():
+        if normalized in phrases:
+            return intent
+    return None
 
 
 @dataclass
@@ -115,6 +166,54 @@ class AIOrchestrator:
         logger.info("Routed to %s reason=%s", result["agent"], result["reason"])
         return result
 
+    def _handle_conversational_phrase(
+        self,
+        message: str,
+        session: SessionState,
+        dialogue: DialogueLogger,
+    ) -> TurnResult | None:
+        intent = _conversational_intent(message)
+        if intent is None:
+            return None
+
+        expected_id = _CONVERSATIONAL_DOCUMENTS[intent]
+        chunks = self.rag.retrieve(message, "ORCHESTRATOR", top_k=6, min_score=0.01)
+        matched = next((chunk for chunk in chunks if chunk.document.id == expected_id), None)
+        if matched is None:
+            logger.warning("Conversation KB document %s was not retrieved", expected_id)
+            return None
+
+        reply_text = matched.document.content.strip()
+        rag_ids = [matched.document.id]
+        dialogue.log_routing(
+            agent="AI_ORCHESTRATOR",
+            reason=f"conversational_{intent}",
+            greeting="",
+        )
+        dialogue.log_agent_reply(
+            agent="AI_ORCHESTRATOR",
+            skill="common_phrases",
+            reply=reply_text,
+            escalated=False,
+            rag_ids=rag_ids,
+        )
+        session.history.append({"role": "user", "content": message})
+        session.history.append({"role": "assistant", "content": reply_text})
+        self._persist(session)
+        return TurnResult(
+            session_id=session.session_id,
+            channel=session.channel,
+            agent="AI_ORCHESTRATOR",
+            agent_label="AI Orchestrator",
+            greeting=None,
+            reply=reply_text,
+            skill="common_phrases",
+            escalated=False,
+            escalation_target=None,
+            rag_ids=rag_ids,
+            routing_reason=f"conversational_{intent}",
+        )
+
     def handle_message(
         self,
         message: str,
@@ -125,6 +224,10 @@ class AIOrchestrator:
         session = self.get_or_create_session(session_id, channel=channel)
         dialogue = DialogueLogger(session.session_id)
         dialogue.log_user_message(message, channel=channel)
+
+        conversational = self._handle_conversational_phrase(message, session, dialogue)
+        if conversational is not None:
+            return conversational
 
         greeting: str | None = None
         routing_reason: str | None = None
