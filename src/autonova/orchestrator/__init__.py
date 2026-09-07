@@ -10,7 +10,6 @@ from autonova.llm import LLMClient, extract_json_object, get_llm_client
 from autonova.logging import DialogueLogger, get_logger, setup_logging
 from autonova.rag import RAGRetriever
 from autonova.skills import SkillRouter, build_skill_registry
-from autonova.storage import PlatformStore
 from autonova.config import get_settings
 
 logger = get_logger("autonova.orchestrator")
@@ -50,7 +49,7 @@ class AIOrchestrator:
         rag: RAGRetriever | None = None,
         skills: SkillRouter | None = None,
         llm: LLMClient | None = None,
-        store: PlatformStore | None = None,
+        store: Any | None = None,
         dealer_id: str | None = None,
     ) -> None:
         setup_logging()

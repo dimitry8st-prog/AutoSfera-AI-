@@ -28,6 +28,10 @@ def test_health_and_chat_flow(monkeypatch, tmp_path):
     assert body["agents"] == ["SALES_AGENT", "SUPPORT_AGENT", "SERVICE_AGENT", "EMPLOYEE_AGENT"]
     assert body["dealer_id"] == "main-salon"
 
+    ready = client.get("/ready")
+    assert ready.status_code == 200
+    assert ready.json()["database"]["backend"] == "sqlite"
+
     skills = client.get("/api/skills").json()
     assert len(skills["skills"]) == 17
 

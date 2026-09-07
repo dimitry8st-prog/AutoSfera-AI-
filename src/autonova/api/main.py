@@ -19,7 +19,7 @@ from autonova.config import ROOT_DIR, get_settings
 from autonova.logging import get_logger, setup_logging
 from autonova.orchestrator import AIOrchestrator
 from autonova.skills import build_skill_registry
-from autonova.storage import PlatformStore
+from autonova.storage import build_store
 from autonova.research import dispatch_research_job
 
 logger = get_logger("autonova.api")
@@ -112,8 +112,8 @@ def get_orchestrator() -> AIOrchestrator:
 
 
 @lru_cache
-def get_store() -> PlatformStore:
-    return PlatformStore()
+def get_store() -> Any:
+    return build_store()
 
 
 def create_app() -> FastAPI:
@@ -162,7 +162,15 @@ def create_app() -> FastAPI:
             "kb_documents": len(orch.kb.documents),
             "dealer_id": settings.dealer_id,
             "dealer_name": settings.dealer_name,
+            "storage_backend": settings.storage_backend,
         }
+
+    @app.get("/ready")
+    def readiness() -> dict[str, Any]:
+        database = get_store().healthcheck()
+        if not database["ok"]:
+            raise HTTPException(status_code=503, detail={"status": "not_ready", "database": database})
+        return {"status": "ready", "database": database}
 
     @app.post("/api/auth/token")
     def login(body: LoginRequest) -> dict[str, Any]:

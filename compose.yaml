@@ -1,0 +1,53 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: autosfera
+      POSTGRES_USER: autosfera
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U autosfera -d autosfera"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+    networks: [backend]
+
+  api:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      APP_ENV: pilot
+      DATABASE_URL: postgresql://autosfera:${POSTGRES_PASSWORD}@postgres:5432/autosfera
+      DATABASE_CONNECT_TIMEOUT_SECONDS: 5
+      DEALER_ID: ${DEALER_ID:-main-salon}
+      DEALER_NAME: ${DEALER_NAME:-AutoSfera Demo Salon}
+      LLM_MODE: ${LLM_MODE:-mock}
+      AUTH_SECRET: ${AUTH_SECRET:?Set AUTH_SECRET in .env}
+      RESEARCH_WEBHOOK_SECRET: ${RESEARCH_WEBHOOK_SECRET:?Set RESEARCH_WEBHOOK_SECRET in .env}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://127.0.0.1:8000,http://localhost:8000}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    ports:
+      - "${APP_PORT:-8000}:8000"
+    volumes:
+      - app_logs:/app/logs
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/ready', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 15s
+    networks: [backend]
+
+volumes:
+  postgres_data:
+  app_logs:
+
+networks:
+  backend:
+    driver: bridge

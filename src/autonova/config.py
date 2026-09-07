@@ -26,6 +26,11 @@ class Settings(BaseSettings):
         default=ROOT_DIR / "data" / "autosfera.db",
         validation_alias="DATABASE_PATH",
     )
+    database_url: str = Field(default="", validation_alias="DATABASE_URL")
+    database_connect_timeout_seconds: int = Field(
+        default=5,
+        validation_alias="DATABASE_CONNECT_TIMEOUT_SECONDS",
+    )
     knowledge_base_dir: Path = ROOT_DIR / "knowledge_base"
     prompts_dir: Path = ROOT_DIR / "prompts"
     logs_dir: Path = Field(default=ROOT_DIR / "logs", validation_alias="LOGS_DIR")
@@ -66,6 +71,10 @@ class Settings(BaseSettings):
     @property
     def allowed_origins(self) -> list[str]:
         return [origin.strip() for origin in self.cors_origins.split(",") if origin.strip()]
+
+    @property
+    def storage_backend(self) -> str:
+        return "postgresql" if self.database_url.startswith(("postgresql://", "postgres://")) else "sqlite"
 
 
 @lru_cache
