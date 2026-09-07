@@ -4,6 +4,8 @@
 
 Коммерческий демо-пилот для одного автосалона с архитектурой, готовой к масштабированию на дилерскую сеть. Версия **2.1.0** добавляет роли, постоянные сессии, кабинет менеджера и защищённый контур исследований с обязательным подтверждением человеком.
 
+Ветка Platform Foundation добавляет собственную демо-CRM на PostgreSQL, Alembic-миграции, Docker Compose, readiness-проверку и проверяемые backup/restore. SQLite сохранён как автономный fallback для локальной разработки и unit-тестов.
+
 Актуальная спецификация пилота: [`docs/COMMERCIAL_PILOT.md`](docs/COMMERCIAL_PILOT.md).
 
 > Пакет Python пока сохраняет техническое имя `autonova`, чтобы не ломать существующие интеграции. Публичный продукт и API называются AutoSfera AI.
@@ -145,6 +147,22 @@ LLM по умолчанию: **`LLM_MODE=mock`** (офлайн, без ключ�
 
 ## Установка и запуск
 
+### Пилотный запуск с PostgreSQL
+
+```bash
+cp .env.example .env
+# Обязательно замените POSTGRES_PASSWORD, AUTH_SECRET и RESEARCH_WEBHOOK_SECRET.
+docker compose up --build -d
+docker compose ps
+curl http://127.0.0.1:8000/ready
+scripts/smoke_postgres.sh
+```
+
+Ожидаемый результат `/ready`: `status=ready`, `database.ok=true`, `backend=postgresql`.
+При первом запуске API выполняет `alembic upgrade head`. PostgreSQL наружу не публикуется и доступен только во внутренней Docker-сети.
+
+### Локальный fallback с SQLite
+
 ```bash
 # из корня репозитория AutoNova
 python -m pip install -e ".[dev]"
@@ -166,6 +184,12 @@ curl http://127.0.0.1:8000/health
 
 Ожидаемый ответ содержит `"status":"ok"`, четыре агента, `"skills":17`, `"version":"2.1.0"`, `dealer_id` и число документов KB.
 
+Проверка готовности базы данных:
+
+```bash
+curl http://127.0.0.1:8000/ready
+```
+
 ---
 
 ## Конфигурация
@@ -181,6 +205,9 @@ cp .env.example .env
 | `DEALER_ID` | `main-salon` | идентификатор салона (изоляция данных) |
 | `DEALER_NAME` | `AutoSfera Demo Salon` | название салона |
 | `DATABASE_PATH` | `data/autosfera.db` | путь к SQLite |
+| `DATABASE_URL` | пусто локально | PostgreSQL URL; в Compose формируется автоматически |
+| `DATABASE_CONNECT_TIMEOUT_SECONDS` | `5` | таймаут проверки PostgreSQL |
+| `POSTGRES_PASSWORD` | — | пароль демо-CRM для Docker Compose |
 | `LLM_MODE` | `mock` | `mock` или `openai` |
 | `OPENAI_API_KEY` | — | ключ для режима `openai` |
 | `OPENAI_BASE_URL` | `https://api.openai.com/v1` | совместимый endpoint |
@@ -232,6 +259,7 @@ LOG_LEVEL=INFO
 |---|---|---|
 | `GET` | `/` | веб-чат |
 | `GET` | `/health` | статус, агенты, skills, dealer, размер KB |
+| `GET` | `/ready` | готовность настроенного хранилища |
 | `GET` | `/api/agents` | метаданные агентов |
 | `GET` | `/api/skills` | список 17 skills |
 | `GET` | `/api/knowledge` | публичные разделы KB; внутренние — только сотрудникам |

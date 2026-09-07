@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main, "agent/**"]
+    branches: [main, "agent/**", "codex/**"]
   pull_request:
 
 permissions:
@@ -29,3 +29,35 @@ jobs:
         run: |
           python -m json.tool contracts/research-job.schema.json >/dev/null
           python -m json.tool contracts/research-callback.schema.json >/dev/null
+
+  postgres-integration:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: autosfera_test
+          POSTGRES_USER: autosfera
+          POSTGRES_PASSWORD: autosfera_test_password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U autosfera -d autosfera_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://autosfera:autosfera_test_password@localhost:5432/autosfera_test
+      TEST_DATABASE_URL: postgresql://autosfera:autosfera_test_password@localhost:5432/autosfera_test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install
+        run: python -m pip install -e ".[dev]"
+      - name: Apply migrations
+        run: python -m alembic upgrade head
+      - name: Verify PostgreSQL store contract
+        run: pytest tests/test_postgres_integration.py -q

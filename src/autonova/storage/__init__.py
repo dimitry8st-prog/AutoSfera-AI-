@@ -14,6 +14,8 @@ from autonova.config import get_settings
 class PlatformStore:
     """SQLite pilot store. Every business row is scoped by dealer_id."""
 
+    backend_name = "sqlite"
+
     def __init__(self, path: Path | None = None) -> None:
         settings = get_settings()
         self.path = Path(path or settings.database_path)
@@ -106,6 +108,14 @@ class PlatformStore:
                 "CREATE UNIQUE INDEX IF NOT EXISTS ux_requests_source_ref "
                 "ON requests(dealer_id, source_ref) WHERE source_ref IS NOT NULL"
             )
+
+    def healthcheck(self) -> dict[str, Any]:
+        try:
+            with self.connect() as db:
+                db.execute("SELECT 1").fetchone()
+            return {"ok": True, "backend": self.backend_name}
+        except sqlite3.Error as exc:
+            return {"ok": False, "backend": self.backend_name, "error": type(exc).__name__}
 
     @staticmethod
     def _ensure_column(db: sqlite3.Connection, table: str, column: str, definition: str) -> None:
@@ -334,3 +344,16 @@ class PlatformStore:
             "requests_by_kind": {row["kind"]: row["total"] for row in by_kind},
             "requests_by_status": {row["status"]: row["total"] for row in by_status},
         }
+
+
+def build_store() -> Any:
+    """Build the configured store without importing PostgreSQL dependencies in SQLite mode."""
+    settings = get_settings()
+    if settings.storage_backend == "postgresql":
+        from autonova.storage.postgres import PostgresPlatformStore
+
+        return PostgresPlatformStore(
+            settings.database_url,
+            connect_timeout_seconds=settings.database_connect_timeout_seconds,
+        )
+    return PlatformStore(settings.database_path)
