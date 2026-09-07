@@ -28,6 +28,13 @@ def test_health_and_chat_flow(monkeypatch, tmp_path):
     assert body["agents"] == ["SALES_AGENT", "SUPPORT_AGENT", "SERVICE_AGENT", "EMPLOYEE_AGENT"]
     assert body["dealer_id"] == "main-salon"
 
+    common = client.post("/api/chat", json={"message": "Здравствуйте!"})
+    assert common.status_code == 200
+    assert common.json()["agent"] == "AI_ORCHESTRATOR"
+    assert common.json()["skill"] == "common_phrases"
+    assert common.json()["escalated"] is False
+    assert common.json()["rag_ids"] == ["conversation-greeting"]
+
     ready = client.get("/ready")
     assert ready.status_code == 200
     assert ready.json()["database"]["backend"] == "sqlite"
@@ -82,5 +89,5 @@ def test_health_and_chat_flow(monkeypatch, tmp_path):
     assert len(client.get("/api/requests", headers=staff_headers).json()["items"]) == 1
 
     analytics = client.get("/api/analytics/summary", headers=staff_headers).json()
-    assert analytics["conversations"] == 2
+    assert analytics["conversations"] == 3
     assert analytics["requests"] == 1

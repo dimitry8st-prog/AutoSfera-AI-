@@ -206,7 +206,9 @@ def create_app() -> FastAPI:
     @app.get("/api/knowledge")
     def knowledge(actor: Actor = Depends(optional_actor)) -> dict[str, Any]:
         orch = get_orchestrator()
-        public_sections = {"company", "sales", "service", "finance", "faq", "glossary"}
+        public_sections = {
+            "conversation", "company", "sales", "service", "finance", "faq", "glossary"
+        }
         allowed_sections = None if actor.role in {"employee", "admin"} else public_sections
         sections: dict[str, list[dict[str, Any]]] = {}
         for doc in orch.kb.documents:

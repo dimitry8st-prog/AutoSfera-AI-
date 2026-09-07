@@ -31,6 +31,7 @@ class Document:
 
 SECTION_ACCESS: dict[str, tuple[str, ...]] = {
     "SALES_AGENT": (
+        "conversation",
         "company",
         "sales",
         "finance",
@@ -41,6 +42,7 @@ SECTION_ACCESS: dict[str, tuple[str, ...]] = {
         "legal",
     ),
     "SUPPORT_AGENT": (
+        "conversation",
         "company",
         "customer_support",
         "faq",
@@ -50,6 +52,7 @@ SECTION_ACCESS: dict[str, tuple[str, ...]] = {
         "legal",
     ),
     "SERVICE_AGENT": (
+        "conversation",
         "company",
         "service",
         "faq",
@@ -59,6 +62,7 @@ SECTION_ACCESS: dict[str, tuple[str, ...]] = {
         "legal",
     ),
     "EMPLOYEE_AGENT": (
+        "conversation",
         "company",
         "sales",
         "customer_support",
@@ -72,6 +76,7 @@ SECTION_ACCESS: dict[str, tuple[str, ...]] = {
         "legal",
     ),
     "ORCHESTRATOR": (
+        "conversation",
         "company",
         "glossary",
         "policies",
@@ -119,7 +124,11 @@ class KnowledgeBase:
 
     def for_agent(self, agent_key: str) -> list[Document]:
         allowed = SECTION_ACCESS.get(agent_key, ())
-        return [d for d in self._documents if d.section in allowed]
+        return [
+            d
+            for d in self._documents
+            if d.section in allowed and (d.agent is None or d.agent == agent_key)
+        ]
 
     def get(self, doc_id: str) -> Document | None:
         for doc in self._documents:

@@ -80,6 +80,7 @@ class RAGRetriever:
         candidates = self.kb.for_agent(agent_key)
         # Prefer factual sections over scripts/policies when scores are close.
         section_boost = {
+            "conversation": 1.2,
             "sales": 1.12,
             "service": 1.12,
             "customer_support": 1.12,
