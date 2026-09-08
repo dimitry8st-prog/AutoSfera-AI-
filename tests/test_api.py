@@ -27,6 +27,14 @@ def test_health_and_chat_flow(monkeypatch, tmp_path):
     assert body["skills"] == 17
     assert body["agents"] == ["SALES_AGENT", "SUPPORT_AGENT", "SERVICE_AGENT", "EMPLOYEE_AGENT"]
     assert body["dealer_id"] == "main-salon"
+    assert body["orchestration"]["engine"] == "langgraph"
+    assert body["orchestration"]["nodes"] == [
+        "classify_conversation",
+        "route_agent",
+        "access_guard",
+        "execute_agent",
+        "persist_turn",
+    ]
 
     common = client.post("/api/chat", json={"message": "Здравствуйте!"})
     assert common.status_code == 200

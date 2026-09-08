@@ -72,7 +72,7 @@
 
 | Компонент | Статус |
 |---|---|
-| AI Orchestrator (маршрутизация) | ✅ |
+| LangGraph Orchestrator (маршрутизация и состояние) | ✅ |
 | Sales / Support / Service / Employee Agents | ✅ |
 | 17 Skills (4 клиентских набора + `competitor_research`) | ✅ |
 | System Prompts (`prompts/`) | ✅ |
@@ -301,7 +301,7 @@ Content-Type: application/json
 | `skill` | сработавший skill |
 | `escalated` / `escalation_target` | нужна ли передача сотруднику |
 | `rag_ids` | id документов KB, использованных в ответе |
-| `routing_reason` | причина маршрутизации (на первом ходе) |
+| `routing_reason` | причина выбора, продолжения или переключения агента |
 
 Дополнительные JSON-примеры: [`docs/integration_examples.json`](docs/integration_examples.json).
 
@@ -314,7 +314,7 @@ Content-Type: application/json
 ### AI Orchestrator
 
 Промпт: `prompts/orchestrator.txt`  
-Роль: определить намерение и выбрать агента. В mock-режиме маршрутизация эвристическая; в `openai` — через LLM (строго JSON).
+Роль: определить намерение, выбрать или переключить агента и сохранить состояние диалога. Центральный поток реализован как LangGraph из узлов `classify_conversation`, `route_agent`, `access_guard`, `execute_agent`, `persist_turn`. Явная смена темы переключает агента, короткое уточнение остаётся у текущего. В mock-режиме маршрутизация эвристическая; в `openai` — через LLM (строго JSON). Для аварийного отката без изменения кода: `ORCHESTRATOR_MODE=legacy`.
 
 ### Sales Agent — покупка и финансы
 
@@ -421,6 +421,7 @@ pytest --cov=autonova -q
 - регистрация ровно 17 skills;
 - RAG retrieval;
 - маршрутизация оркестратора (sales / support / service / employee / leasing);
+- граф LangGraph, смена темы, продолжение контекста и безопасный fallback;
 - сохранение агента в сессии и reset;
 - эскалации (неизвестный заказ, подтверждение гарантии);
 - SQLite: заявки и аналитика по `dealer_id`;

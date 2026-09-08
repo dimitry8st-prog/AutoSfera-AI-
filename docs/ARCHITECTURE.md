@@ -1,6 +1,6 @@
 # Архитектура AutoSfera AI
 
-Стек: Python 3.11+, FastAPI, JSON Knowledge Base, TF-IDF RAG, Skills, SQLite (`dealer_id`), mock/OpenAI LLM.
+Стек: Python 3.11+, FastAPI, LangGraph 1.2, JSON Knowledge Base, TF-IDF RAG, Skills, PostgreSQL/SQLite (`dealer_id`), mock/OpenAI LLM.
 
 Версия платформы: **2.1.0**.
 
@@ -16,11 +16,12 @@
 ## Поток запроса
 
 1. Канал (`web` или stub) принимает сообщение.
-2. Orchestrator при первом ходе выбирает агента (JSON от LLM или эвристика в `mock`).
-3. Agent вызывает SkillRouter → Skill.
-4. RAG достаёт фрагменты KB с учётом Least Privilege (`SECTION_ACCESS`).
-5. Skill формирует ответ; диалог и эскалации пишутся в SQLite + JSONL.
-6. Бизнес-заявки (`lead` / `test_drive` / `service`) сохраняются через `/api/requests`.
+2. LangGraph распознаёт типовую фразу или определяет домен запроса.
+3. Явная смена темы переключает агента; неоднозначное короткое уточнение остаётся у текущего агента.
+4. `access_guard` проверяет, разрешён ли выбранный агент роли пользователя.
+5. Agent вызывает SkillRouter → Skill, а RAG достаёт только разрешённые фрагменты KB.
+6. `persist_turn` сохраняет активного агента и историю в PostgreSQL/SQLite; JSONL сохраняет аудит.
+7. Бизнес-заявки (`lead` / `test_drive` / `service`) сохраняются через `/api/requests`.
 
 ```
 Пользователь (браузер)
@@ -32,34 +33,47 @@
   FastAPI (src/autonova/api)
         │
         ▼
-  AI Orchestrator
+  LangGraph Orchestrator
         │
    ┌────┼──────────────┬────────────┐
    ▼    ▼              ▼            ▼
  Sales Support      Service     Employee
  Agent  Agent        Agent       Agent
    │      │             │            │
-   └──────┴── Skills (16) ──────────┘
+   └──────┴── Skills (17) ──────────┘
               │
               ▼
              RAG  →  Knowledge Base
               │
               ▼
-     SQLite (conversations, requests) + logs/
+ PostgreSQL/SQLite (sessions, conversations, requests) + logs/
 ```
 
-## Skills (16)
+## Граф оркестрации
+
+| Узел | Ответственность |
+|---|---|
+| `classify_conversation` | Приветствия, благодарности и другие типовые фразы из RAG |
+| `route_agent` | Первый выбор агента, смена темы или продолжение текущего контекста |
+| `access_guard` | Проверка роли и запрет доступа к Employee Agent для гостя |
+| `execute_agent` | Запуск специализированного агента, Skill и RAG |
+| `persist_turn` | Формирование результата и сохранение сессии |
+
+Если граф аварийно завершается, система не выдумывает ответ: возвращает безопасное сообщение и эскалирует обращение человеку. Режим `ORCHESTRATOR_MODE=legacy` оставлен как операционный rollback.
+
+## Skills (17)
 
 | Agent | Skills |
 |---|---|
 | Sales | vehicle_selection, trade_in, credit_leasing, test_drive_booking |
 | Support | order_status, documentation_support, customer_faq, support_escalation |
 | Service | warranty_consultation, service_booking, maintenance_consultation, service_escalation |
-| Employee | internal_knowledge, sales_coaching, process_lookup, manager_escalation |
+| Employee | internal_knowledge, sales_coaching, process_lookup, manager_escalation, competitor_research |
 
 ## Хранение
 
-- `data/autosfera.db` — диалоги и заявки, каждая строка с `dealer_id`
+- PostgreSQL в контейнерном/боевом контуре; SQLite — локальный резервный режим
+- активный агент и история LangGraph-сессии сохраняются с изоляцией по `dealer_id`
 - `logs/autonova.log` — приложение
 - `logs/dialogues.log` — диалоги
 - `data/dialogues/<session_id>.jsonl` — события сессии

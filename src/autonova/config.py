@@ -58,6 +58,8 @@ class Settings(BaseSettings):
 
     # LLM: mock by default for offline/tests; set LLM_MODE=openai to use API
     llm_mode: str = Field(default="mock", validation_alias="LLM_MODE")
+    # Set ORCHESTRATOR_MODE=legacy for an immediate rollback without code changes.
+    orchestrator_mode: str = Field(default="langgraph", validation_alias="ORCHESTRATOR_MODE")
     openai_api_key: str = Field(default="", validation_alias="OPENAI_API_KEY")
     openai_base_url: str = Field(
         default="https://api.openai.com/v1",
