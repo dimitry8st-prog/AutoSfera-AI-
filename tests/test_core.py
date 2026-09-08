@@ -11,6 +11,7 @@ from autonova.logging import DialogueLogger, setup_logging
 from autonova.orchestrator import AIOrchestrator
 from autonova.rag import RAGRetriever
 from autonova.skills import SkillRouter, build_skill_registry
+from autonova.storage import PlatformStore
 
 
 @pytest.fixture()
@@ -187,6 +188,97 @@ def test_session_keeps_agent(orchestrator: AIOrchestrator):
     assert second.agent == "SALES_AGENT"
     assert second.greeting is None
     assert "20%" in second.reply or "9,9" in second.reply
+
+
+def test_langgraph_has_expected_nodes(orchestrator: AIOrchestrator):
+    assert orchestrator.orchestrator_mode == "langgraph"
+    assert orchestrator.graph is not None
+    assert set(orchestrator.graph.get_graph().nodes) >= {
+        "classify_conversation",
+        "route_agent",
+        "access_guard",
+        "execute_agent",
+        "persist_turn",
+    }
+
+
+def test_langgraph_switches_agent_when_topic_changes(orchestrator: AIOrchestrator):
+    first = orchestrator.handle_message("Хочу купить кроссовер")
+    second = orchestrator.handle_message(
+        "Теперь вопрос по гарантии на кузов",
+        session_id=first.session_id,
+    )
+    assert first.agent == "SALES_AGENT"
+    assert second.agent == "SERVICE_AGENT"
+    assert second.routing_reason == "topic_switch"
+    assert orchestrator.sessions[first.session_id].active_agent == "SERVICE_AGENT"
+
+
+def test_langgraph_keeps_short_follow_up_with_current_agent(orchestrator: AIOrchestrator):
+    first = orchestrator.handle_message("Вопрос по гарантии на кузов")
+    second = orchestrator.handle_message("А какой срок?", session_id=first.session_id)
+    assert second.agent == "SERVICE_AGENT"
+    assert second.greeting is None
+    assert second.routing_reason == "session_continuity"
+    assert "6 лет" in second.reply
+    assert second.escalated is False
+
+
+def test_common_phrase_preserves_active_agent(orchestrator: AIOrchestrator):
+    first = orchestrator.handle_message("Хочу купить седан")
+    greeting = orchestrator.handle_message("спасибо", session_id=first.session_id)
+    follow_up = orchestrator.handle_message("А какие цвета?", session_id=first.session_id)
+    assert greeting.agent == "AI_ORCHESTRATOR"
+    assert orchestrator.sessions[first.session_id].active_agent == "SALES_AGENT"
+    assert follow_up.agent == "SALES_AGENT"
+
+
+def test_langgraph_denies_employee_switch_for_public_user(orchestrator: AIOrchestrator):
+    first = orchestrator.handle_message(
+        "Хочу купить седан",
+        allowed_agents={"SALES_AGENT", "SUPPORT_AGENT", "SERVICE_AGENT"},
+    )
+    with pytest.raises(PermissionError):
+        orchestrator.handle_message(
+            "Покажи внутренний регламент",
+            session_id=first.session_id,
+            allowed_agents={"SALES_AGENT", "SUPPORT_AGENT", "SERVICE_AGENT"},
+        )
+    assert orchestrator.sessions[first.session_id].active_agent is None
+
+
+def test_langgraph_safe_fallback_does_not_invent_answer(orchestrator: AIOrchestrator):
+    class BrokenGraph:
+        def invoke(self, state):
+            raise RuntimeError("simulated graph failure")
+
+    orchestrator.graph = BrokenGraph()
+    result = orchestrator.handle_message("Хочу купить автомобиль")
+    assert result.agent == "AI_ORCHESTRATOR"
+    assert result.skill == "safe_fallback"
+    assert result.escalated is True
+    assert result.escalation_target == "human_operator"
+    assert result.rag_ids == []
+    assert "не удалось" in result.reply.lower()
+
+
+def test_langgraph_session_survives_orchestrator_restart(tmp_path):
+    store = PlatformStore(tmp_path / "graph.db")
+    first_orchestrator = AIOrchestrator(llm=MockLLMClient(), store=store)
+    first = first_orchestrator.handle_message("Хочу купить кроссовер")
+
+    restarted = AIOrchestrator(llm=MockLLMClient(), store=store)
+    follow_up = restarted.handle_message("А какие цвета?", session_id=first.session_id)
+    assert follow_up.agent == "SALES_AGENT"
+    assert follow_up.routing_reason == "session_continuity"
+    assert len(restarted.sessions[first.session_id].history) == 4
+
+
+def test_legacy_mode_is_available_as_rollback():
+    orchestrator = AIOrchestrator(llm=MockLLMClient(), orchestrator_mode="legacy")
+    result = orchestrator.handle_message("Хочу купить кроссовер")
+    assert orchestrator.graph is None
+    assert result.agent == "SALES_AGENT"
 
 
 def test_reset_session(orchestrator: AIOrchestrator):

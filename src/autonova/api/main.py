@@ -163,6 +163,10 @@ def create_app() -> FastAPI:
             "dealer_id": settings.dealer_id,
             "dealer_name": settings.dealer_name,
             "storage_backend": settings.storage_backend,
+            "orchestration": {
+                "engine": orch.orchestrator_mode,
+                "nodes": list(orch.graph_nodes) if orch.graph is not None else [],
+            },
         }
 
     @app.get("/ready")
