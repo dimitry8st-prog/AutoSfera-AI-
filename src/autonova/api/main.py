@@ -210,6 +210,7 @@ def create_app() -> FastAPI:
     @app.get("/api/knowledge")
     def knowledge(actor: Actor = Depends(optional_actor)) -> dict[str, Any]:
         orch = get_orchestrator()
+        orch.kb.reload()
         public_sections = {
             "conversation", "company", "sales", "service", "finance", "faq", "glossary"
         }

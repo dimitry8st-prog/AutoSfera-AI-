@@ -73,8 +73,20 @@ class BaseAgent:
         history: list[dict[str, str]] | None = None,
         dialogue: DialogueLogger | None = None,
     ) -> AgentReply:
-        chunks = self.rag.retrieve(message, self.key)
-        result: SkillResult = self.skills.run(self.key, message, chunks)
+        history = history or []
+        query = " ".join(
+            [
+                *[item.get("content", "") for item in history if item.get("role") == "user"],
+                message,
+            ]
+        ).strip()
+        chunks = self.rag.retrieve(query or message, self.key)
+        result: SkillResult = self.skills.run(
+            self.key,
+            message,
+            chunks,
+            ctx={"history": history},
+        )
         preface = (
             f"Здравствуйте! Я {self.label} — ИИ-ассистент AutoSfera AI.\n\n"
             if not history

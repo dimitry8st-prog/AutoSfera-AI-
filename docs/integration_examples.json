@@ -1,5 +1,5 @@
 {
-  "integration": "AutoNova Multi-Agent API",
+  "integration": "AutoSfera Multi-Agent API",
   "version": "1.0.0",
   "channels": ["web", "telegram", "whatsapp", "email", "crm"],
   "examples": [
@@ -46,7 +46,7 @@
       "input": "Лизинг для юридических лиц на 5 авто",
       "output": {
         "agent": "SALES_AGENT",
-        "greeting": "Передаю вас Sales Agent AutoNova.",
+        "greeting": "Передаю вас Sales Agent AutoSfera AI.",
         "reason": "intent_match"
       }
     },

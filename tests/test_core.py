@@ -119,6 +119,22 @@ def test_orchestrator_routes_sales(orchestrator: AIOrchestrator):
     assert result.skill in {"vehicle_selection", "credit_leasing", "test_drive_booking", "trade_in"}
     assert "2 400 000" in result.reply or "Nova Drive" in result.reply
     assert result.greeting
+    assert "Nova Comfort" not in result.reply
+    assert "Уточните бюджет" in result.reply
+
+
+def test_vehicle_selection_filters_sedan_and_budget(orchestrator: AIOrchestrator):
+    first = orchestrator.handle_message("Хочу купить кроссовер")
+    second = orchestrator.handle_message(
+        "нужен седан за 2 млн рублей",
+        session_id=first.session_id,
+    )
+    assert second.agent == "SALES_AGENT"
+    assert second.skill == "vehicle_selection"
+    assert "Nova Comfort" in second.reply
+    assert "1 800 000" in second.reply
+    assert "Nova Drive" not in second.reply
+    assert "Уточните бюджет, тип кузова" not in second.reply
 
 
 @pytest.mark.parametrize(

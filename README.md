@@ -25,7 +25,7 @@
 
 ## Архивная документация MVP 1.1
 
-Учебный проект: автоматизация клиентских обращений вымышленной автомобильной компании **AutoNova** с помощью AI Orchestrator, трёх специализированных агентов, Skills, Knowledge Base и RAG.
+Учебный проект: автоматизация клиентских обращений вымышленной автомобильной компании **AutoSfera** с помощью AI Orchestrator, трёх специализированных агентов, Skills, Knowledge Base и RAG.
 
 Версия MVP: **1.1** · Стек: **Python 3.11+**, **FastAPI**, JSON KB, TF-IDF RAG, веб-чат  
 Все цены, заказы и контакты — **тестовые (вымышленные)**.
@@ -165,7 +165,7 @@ scripts/smoke_postgres.sh
 ### Локальный fallback с SQLite
 
 ```bash
-# из корня репозитория AutoNova
+# из корня репозитория AutoSfera AI
 python -m pip install -e ".[dev]"
 
 # тесты
@@ -445,7 +445,7 @@ pytest --cov=autonova -q
 
 **Модели:** Nova Comfort / Drive / Cargo / Classic (цены от 950 000 до 2 400 000 ₽).  
 **Заказы:** `АН-2024-0512`, `АН-2024-0388`.  
-Полные таблицы: [`AutoNova_MVP_Documentation.md`](AutoNova_MVP_Documentation.md).
+Полные таблицы: [`AutoSfera_MVP_Documentation.md`](AutoSfera_MVP_Documentation.md).
 
 ---
 
@@ -455,7 +455,7 @@ pytest --cov=autonova -q
 AutoSfera AI/
 ├── README.md
 ├── docs/COMMERCIAL_PILOT.md        # спецификация пилота 2.0
-├── AutoNova_MVP_Documentation.md   # архив учебного MVP 1.1
+├── AutoSfera_MVP_Documentation.md   # архив учебного MVP 1.1
 ├── pyproject.toml                  # пакет autonova 2.1.0
 ├── .env.example
 ├── contracts/                      # JSON Schema для n8n/Langflow
@@ -506,7 +506,7 @@ AutoSfera AI/
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | поток запроса, skills, API, storage |
 | [docs/TEST_DIALOGS.md](docs/TEST_DIALOGS.md) | тестовые диалоги |
 | [docs/integration_examples.json](docs/integration_examples.json) | примеры JSON-интеграции |
-| [AutoNova_MVP_Documentation.md](AutoNova_MVP_Documentation.md) | архив учебного MVP 1.1 |
+| [AutoSfera_MVP_Documentation.md](AutoSfera_MVP_Documentation.md) | архив учебного MVP 1.1 |
 | http://127.0.0.1:8000/docs | OpenAPI (Swagger UI) после запуска |
 
 ---

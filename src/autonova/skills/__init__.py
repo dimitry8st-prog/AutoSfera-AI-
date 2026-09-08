@@ -161,10 +161,108 @@ def _extract_order_id(text: str) -> str | None:
     return "АН-" + raw.split("-", 1)[1]
 
 
+_CATALOG_MODEL_RE = re.compile(
+    r"(Nova\s+(?:Comfort|Drive|Cargo|Classic))\s*\(([^)]+)\)\s*от\s+([\d\s]+)\s*руб",
+    re.IGNORECASE,
+)
+_BODY_ALIASES: tuple[tuple[str, str], ...] = (
+    ("кроссовер", "кроссовер"),
+    ("crossover", "кроссовер"),
+    ("фургон", "фургон"),
+    ("седан", "седан"),
+    ("б/у", "б/у"),
+    ("пробегом", "б/у"),
+)
+
+
+def _catalog_blob(chunks: list[RetrievedChunk]) -> str:
+    preferred = [c.document.content for c in chunks if c.document.id == "sales-models"]
+    return "\n".join(preferred or [c.document.content for c in chunks])
+
+
+def _parse_catalog_models(text: str) -> list[dict[str, Any]]:
+    models: list[dict[str, Any]] = []
+    for match in _CATALOG_MODEL_RE.finditer(text):
+        price = int(re.sub(r"\s+", "", match.group(3)))
+        models.append(
+            {
+                "name": re.sub(r"\s+", " ", match.group(1)).title().replace("Nova", "Nova"),
+                "body": match.group(2).strip().lower(),
+                "price": price,
+                "line": match.group(0).strip(),
+            }
+        )
+    return models
+
+
+def _user_constraint_text(message: str, ctx: dict[str, Any]) -> str:
+    history = ctx.get("history") or []
+    prior = [
+        str(item.get("content", ""))
+        for item in history
+        if item.get("role") == "user"
+    ]
+    return "\n".join([*prior, message]).strip()
+
+
+def _extract_budget(text: str) -> int | None:
+    lowered = text.lower().replace("ё", "е")
+    million = list(
+        re.finditer(r"(\d+(?:[.,]\d+)?)\s*(млн|миллион)", lowered)
+    )
+    if million:
+        value = million[-1].group(1).replace(",", ".")
+        return int(float(value) * 1_000_000)
+    thousand = list(re.finditer(r"(\d+(?:[.,]\d+)?)\s*(тыс|тысяч)", lowered))
+    if thousand:
+        value = thousand[-1].group(1).replace(",", ".")
+        return int(float(value) * 1_000)
+    rubles = list(re.finditer(r"(\d[\d\s]{4,})\s*руб", lowered))
+    if rubles:
+        return int(re.sub(r"\s+", "", rubles[-1].group(1)))
+    return None
+
+
+def _extract_body_type(text: str) -> str | None:
+    lowered = text.lower()
+    last: str | None = None
+    last_pos = -1
+    for alias, canonical in _BODY_ALIASES:
+        pos = lowered.rfind(alias)
+        if pos > last_pos:
+            last_pos = pos
+            last = canonical
+    return last
+
+
+def _model_matches(model: dict[str, Any], body: str | None, budget: int | None) -> bool:
+    body_text = str(model["body"])
+    if body == "седан" and "седан" not in body_text:
+        return False
+    if body == "кроссовер" and "кроссовер" not in body_text:
+        return False
+    if body == "фургон" and "фургон" not in body_text:
+        return False
+    if body == "б/у" and "б/у" not in body_text:
+        return False
+    if budget is not None and int(model["price"]) > budget:
+        return False
+    return True
+
+
+def _format_price(value: int) -> str:
+    return f"{value:,}".replace(",", " ")
+
+
 # --- Sales skills ---
 
 def vehicle_selection(message: str, chunks: list[RetrievedChunk], ctx: dict[str, Any]) -> SkillResult:
-    text, ids, missing = _context_or_missing(chunks, "vehicle_selection", limit=1)
+    text, ids, missing = _context_or_missing(
+        chunks,
+        "vehicle_selection",
+        limit=2,
+        prefer_ids=("sales-models",),
+    )
     if missing:
         return SkillResult(
             "vehicle_selection",
@@ -174,6 +272,52 @@ def vehicle_selection(message: str, chunks: list[RetrievedChunk], ctx: dict[str,
             escalation_reason="нет данных в KB",
             rag_ids=ids,
         )
+    combined = _user_constraint_text(message, ctx)
+    models = _parse_catalog_models(_catalog_blob(chunks) or text)
+    body = _extract_body_type(combined)
+    budget = _extract_budget(combined)
+    matches = [m for m in models if _model_matches(m, body, budget)] if models else []
+
+    if models and (body or budget):
+        if matches:
+            lines = "\n".join(f"• {item['line']}." for item in matches)
+            constraints: list[str] = []
+            if body:
+                constraints.append(f"тип кузова «{body}»")
+            if budget is not None:
+                constraints.append(f"бюджет до {_format_price(budget)} ₽")
+            asked = " и ".join(constraints)
+            next_step = (
+                "Какая комплектация нужна?"
+                if body and budget is not None
+                else "Уточните бюджет."
+                if body and budget is None
+                else "Уточните тип кузова: седан, кроссовер или фургон."
+            )
+            reply = (
+                f"По запросу ({asked}) в каталоге AutoSfera есть:\n\n"
+                f"{lines}\n\n"
+                f"{next_step} Могу записать на тест-драйв или передать заявку менеджеру."
+            )
+        else:
+            catalog = "\n".join(f"• {item['line']}." for item in models)
+            reply = (
+                "В каталоге нет модели, которая одновременно подходит под указанные "
+                "условия. Актуальный ряд AutoSfera:\n\n"
+                f"{catalog}\n\n"
+                "Можем сдвинуть бюджет или выбрать другой тип кузова — подскажу по базе."
+            )
+        return SkillResult(
+            "vehicle_selection",
+            reply,
+            rag_ids=ids,
+            collected_fields={
+                "body_type": body,
+                "budget": budget,
+                "vehicle": matches[0]["name"] if len(matches) == 1 else None,
+            },
+        )
+
     reply = (
         "Помогу подобрать автомобиль. Вот данные из каталога автосалона:\n\n"
         f"{text}\n\n"
@@ -482,7 +626,7 @@ def build_skill_registry() -> dict[str, Skill]:
             "Vehicle Selection",
             "SALES_AGENT",
             "Подбор автомобиля и комплектации",
-            ("купить", "подобрать", "кроссовер", "седан", "фургон", "модель", "комплектац", "nova"),
+            ("купить", "подобрать", "кроссовер", "седан", "фургон", "модель", "комплектац", "nova", "бюджет", "млн"),
             vehicle_selection,
         ),
         Skill(
