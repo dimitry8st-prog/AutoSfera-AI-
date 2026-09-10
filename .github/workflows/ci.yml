@@ -32,6 +32,18 @@ jobs:
           python -m json.tool contracts/action-job.schema.json >/dev/null
           python -m json.tool contracts/action-callback.schema.json >/dev/null
           python -m json.tool integrations/n8n/action-gateway.workflow.json >/dev/null
+      - name: Validate sandbox scripts
+        run: |
+          sh -n scripts/setup_n8n_sandbox.sh
+          python -m py_compile scripts/smoke_action_gateway_n8n.py
+      - name: Validate sandbox Compose
+        env:
+          POSTGRES_PASSWORD: ci-postgres-password
+          AUTH_SECRET: ci-auth-secret
+          RESEARCH_WEBHOOK_SECRET: ci-research-secret
+          ACTION_WEBHOOK_SECRET: ci-action-secret
+          N8N_ENCRYPTION_KEY: ci-n8n-encryption-key
+        run: docker compose -f compose.yaml -f compose.n8n-sandbox.yaml config >/dev/null
 
   postgres-integration:
     runs-on: ubuntu-latest
@@ -64,3 +76,25 @@ jobs:
         run: python -m alembic upgrade head
       - name: Verify PostgreSQL store contract
         run: pytest tests/test_postgres_integration.py -q
+
+  n8n-sandbox-e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run real n8n sandbox smoke test
+        run: scripts/setup_n8n_sandbox.sh
+      - name: Show container logs after failure
+        if: failure()
+        run: |
+          docker compose --env-file .env.n8n.local \
+            -f compose.yaml -f compose.n8n-sandbox.yaml ps
+          docker compose --env-file .env.n8n.local \
+            -f compose.yaml -f compose.n8n-sandbox.yaml logs --tail=200
+      - name: Stop sandbox
+        if: always()
+        run: |
+          if [ -f .env.n8n.local ]; then
+            docker compose --env-file .env.n8n.local \
+              -f compose.yaml -f compose.n8n-sandbox.yaml down --volumes
+          fi

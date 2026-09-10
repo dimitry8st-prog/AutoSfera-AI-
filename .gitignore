@@ -6,6 +6,7 @@ htmlcov/
 .venv/
 venv/
 .env
+.env.n8n.local
 logs/*.log
 data/dialogues/*.jsonl
 data/*.db
