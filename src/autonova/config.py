@@ -31,8 +31,18 @@ class Settings(BaseSettings):
         default=5,
         validation_alias="DATABASE_CONNECT_TIMEOUT_SECONDS",
     )
-    knowledge_base_dir: Path = ROOT_DIR / "knowledge_base"
-    prompts_dir: Path = ROOT_DIR / "prompts"
+    knowledge_base_dir: Path = Field(
+        default=ROOT_DIR / "knowledge_base",
+        validation_alias="KNOWLEDGE_BASE_DIR",
+    )
+    prompts_dir: Path = Field(
+        default=ROOT_DIR / "prompts",
+        validation_alias="PROMPTS_DIR",
+    )
+    frontend_dir: Path = Field(
+        default=ROOT_DIR / "frontend",
+        validation_alias="FRONTEND_DIR",
+    )
     logs_dir: Path = Field(default=ROOT_DIR / "logs", validation_alias="LOGS_DIR")
     dialogues_dir: Path = Field(
         default=ROOT_DIR / "data" / "dialogues",

@@ -22,7 +22,7 @@ from autonova.auth import (
     verify_demo_credentials, verify_webhook,
 )
 from autonova.channels import build_channels
-from autonova.config import ROOT_DIR, get_settings
+from autonova.config import get_settings
 from autonova.logging import get_logger, setup_logging
 from autonova.orchestrator import AIOrchestrator
 from autonova.skills import build_skill_registry
@@ -133,7 +133,7 @@ def get_store() -> Any:
 def create_app() -> FastAPI:
     settings = get_settings()
     setup_logging()
-    frontend_dir = ROOT_DIR / "frontend"
+    frontend_dir = settings.frontend_dir
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI):
