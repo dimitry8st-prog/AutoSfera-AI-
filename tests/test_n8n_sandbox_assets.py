@@ -34,6 +34,8 @@ def test_sandbox_compose_keeps_n8n_local_and_secrets_external() -> None:
     assert "N8N_ENCRYPTION_KEY:?" in compose
     assert "http://n8n:5678/webhook/autosfera-actions" in compose
     assert "NODE_FUNCTION_ALLOW_BUILTIN: crypto" in compose
+    assert 'command: ["import:workflow", "--input=/workflows/action-gateway.workflow.json"]' in compose
+    assert 'command: ["update:workflow", "--all", "--active=true"]' in compose
 
 
 def test_sandbox_scripts_do_not_embed_customer_or_gateway_secrets() -> None:

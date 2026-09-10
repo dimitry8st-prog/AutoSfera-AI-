@@ -46,12 +46,17 @@ services:
     image: n8nio/n8n:2.37.10
     profiles: [setup]
     environment: *n8n_environment
-    command:
-      - /bin/sh
-      - -ec
-      - |
-        n8n import:workflow --input=/workflows/action-gateway.workflow.json
-        n8n update:workflow --all --active=true
+    command: ["import:workflow", "--input=/workflows/action-gateway.workflow.json"]
+    volumes:
+      - n8n_sandbox_data:/home/node/.n8n
+      - ./integrations/n8n:/workflows:ro
+    networks: [backend]
+
+  n8n-activate:
+    image: n8nio/n8n:2.37.10
+    profiles: [setup]
+    environment: *n8n_environment
+    command: ["update:workflow", "--all", "--active=true"]
     volumes:
       - n8n_sandbox_data:/home/node/.n8n
       - ./integrations/n8n:/workflows:ro

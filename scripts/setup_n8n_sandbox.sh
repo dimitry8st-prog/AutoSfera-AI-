@@ -38,6 +38,7 @@ fi
 
 compose up -d postgres
 compose run --rm n8n-import
+compose run --rm n8n-activate
 compose up -d n8n api
 
 echo "Waiting for AutoSfera API readiness..."
