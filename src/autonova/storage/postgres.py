@@ -250,6 +250,155 @@ class PostgresPlatformStore:
             row = cur.fetchone()
         return self._decode_research_row(row) if row else None
 
+    def _decode_action_row(self, row: dict[str, Any] | None) -> dict[str, Any] | None:
+        data = self._row(row)
+        if data is None:
+            return None
+        data["payload"] = data.pop("payload_json", {})
+        data["result"] = data.pop("result_json", None)
+        return data
+
+    def _add_action_event(
+        self, cur: Any, dealer_id: str, action_id: str, event_type: str,
+        actor: str, details: dict[str, Any] | None = None,
+    ) -> None:
+        cur.execute(
+            """INSERT INTO action_events
+            (id, dealer_id, action_id, event_type, actor, details_json, created_at)
+            VALUES (%s, %s, %s, %s, %s, %s, %s)""",
+            (str(uuid4()), dealer_id, action_id, event_type, actor,
+             Jsonb(details or {}), self._now()),
+        )
+
+    def create_action_job(
+        self, dealer_id: str, actor: str, session_id: str | None, kind: str,
+        payload: dict[str, Any], idempotency_key: str, trace_id: str,
+    ) -> tuple[dict[str, Any], bool]:
+        if kind not in {"test_drive", "service"}:
+            raise ValueError("unsupported action kind")
+        now = self._now()
+        action_id = str(uuid4())
+        with self.connect() as db, db.cursor() as cur:
+            cur.execute(
+                """INSERT INTO action_jobs
+                (id, dealer_id, actor, session_id, kind, status, payload_json,
+                 idempotency_key, trace_id, created_at, updated_at)
+                VALUES (%s, %s, %s, %s, %s, 'waiting_approval', %s, %s, %s, %s, %s)
+                ON CONFLICT (dealer_id, idempotency_key) DO NOTHING RETURNING *""",
+                (action_id, dealer_id, actor, session_id, kind, Jsonb(payload),
+                 idempotency_key, trace_id, now, now),
+            )
+            row = cur.fetchone()
+            created = row is not None
+            if created:
+                self._add_action_event(cur, dealer_id, action_id, "proposed", actor, {"kind": kind})
+            else:
+                cur.execute(
+                    "SELECT * FROM action_jobs WHERE dealer_id = %s AND idempotency_key = %s",
+                    (dealer_id, idempotency_key),
+                )
+                row = cur.fetchone()
+        return self._decode_action_row(row) or {}, created
+
+    def get_action_job(self, dealer_id: str, action_id: str) -> dict[str, Any] | None:
+        with self.connect() as db, db.cursor() as cur:
+            cur.execute("SELECT * FROM action_jobs WHERE id = %s AND dealer_id = %s", (action_id, dealer_id))
+            return self._decode_action_row(cur.fetchone())
+
+    def list_action_jobs(self, dealer_id: str, limit: int = 100) -> list[dict[str, Any]]:
+        with self.connect() as db, db.cursor() as cur:
+            cur.execute(
+                "SELECT * FROM action_jobs WHERE dealer_id = %s ORDER BY created_at DESC LIMIT %s",
+                (dealer_id, limit),
+            )
+            return [self._decode_action_row(row) or {} for row in cur.fetchall()]
+
+    def review_action_job(
+        self, dealer_id: str, action_id: str, decision: str, actor: str,
+        note: str | None = None,
+    ) -> tuple[dict[str, Any] | None, bool]:
+        target = "approved" if decision == "approve" else "rejected"
+        now = self._now()
+        with self.connect() as db, db.cursor() as cur:
+            cur.execute(
+                """UPDATE action_jobs SET status = %s, review_note = %s, approved_by = %s,
+                approved_at = %s, updated_at = %s
+                WHERE id = %s AND dealer_id = %s AND status = 'waiting_approval' RETURNING *""",
+                (target, note, actor if target == "approved" else None,
+                 now if target == "approved" else None, now, action_id, dealer_id),
+            )
+            row = cur.fetchone()
+            changed = row is not None
+            if changed:
+                self._add_action_event(cur, dealer_id, action_id, target, actor, {"note": note})
+            else:
+                cur.execute("SELECT * FROM action_jobs WHERE id = %s AND dealer_id = %s", (action_id, dealer_id))
+                row = cur.fetchone()
+        return self._decode_action_row(row), changed
+
+    def claim_action_job(self, dealer_id: str, action_id: str, actor: str = "gateway") -> dict[str, Any] | None:
+        with self.connect() as db, db.cursor() as cur:
+            cur.execute(
+                """UPDATE action_jobs SET status = 'running', attempt_count = attempt_count + 1,
+                error = NULL, updated_at = %s
+                WHERE id = %s AND dealer_id = %s AND status = 'approved' RETURNING *""",
+                (self._now(), action_id, dealer_id),
+            )
+            row = cur.fetchone()
+            if row:
+                self._add_action_event(cur, dealer_id, action_id, "dispatch_started", actor)
+        return self._decode_action_row(row)
+
+    def finish_action_job(
+        self, dealer_id: str, action_id: str, status: str, actor: str,
+        *, result: dict[str, Any] | None = None, error: str | None = None,
+    ) -> tuple[dict[str, Any] | None, bool]:
+        if status not in {"completed", "failed", "delivery_unknown"}:
+            raise ValueError("unsupported terminal action status")
+        with self.connect() as db, db.cursor() as cur:
+            cur.execute(
+                """UPDATE action_jobs SET status = %s, result_json = %s, error = %s, updated_at = %s
+                WHERE id = %s AND dealer_id = %s
+                AND (status = 'running' OR (%s IN ('completed', 'failed') AND status = 'delivery_unknown'))
+                RETURNING *""",
+                (status, Jsonb(result) if result is not None else None, error,
+                 self._now(), action_id, dealer_id, status),
+            )
+            row = cur.fetchone()
+            changed = row is not None
+            if changed:
+                self._add_action_event(cur, dealer_id, action_id, status, actor,
+                                       {"result": result, "error": error})
+            else:
+                cur.execute("SELECT * FROM action_jobs WHERE id = %s AND dealer_id = %s", (action_id, dealer_id))
+                row = cur.fetchone()
+        return self._decode_action_row(row), changed
+
+    def retry_action_job(self, dealer_id: str, action_id: str, actor: str) -> tuple[dict[str, Any] | None, bool]:
+        with self.connect() as db, db.cursor() as cur:
+            cur.execute(
+                """UPDATE action_jobs SET status = 'approved', error = NULL, updated_at = %s
+                WHERE id = %s AND dealer_id = %s AND status = 'failed' RETURNING *""",
+                (self._now(), action_id, dealer_id),
+            )
+            row = cur.fetchone()
+            changed = row is not None
+            if changed:
+                self._add_action_event(cur, dealer_id, action_id, "retry_requested", actor)
+            else:
+                cur.execute("SELECT * FROM action_jobs WHERE id = %s AND dealer_id = %s", (action_id, dealer_id))
+                row = cur.fetchone()
+        return self._decode_action_row(row), changed
+
+    def list_action_events(self, dealer_id: str, action_id: str) -> list[dict[str, Any]]:
+        with self.connect() as db, db.cursor() as cur:
+            cur.execute(
+                """SELECT * FROM action_events WHERE dealer_id = %s AND action_id = %s
+                ORDER BY created_at, id""", (dealer_id, action_id),
+            )
+            rows = cur.fetchall()
+        return [self._row(row) or {} for row in rows]
+
     def analytics(self, dealer_id: str) -> dict[str, Any]:
         with self.connect() as db, db.cursor() as cur:
             cur.execute("SELECT COUNT(*) AS total FROM conversations WHERE dealer_id = %s", (dealer_id,))

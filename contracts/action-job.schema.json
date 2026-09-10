@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://autosfera.example/contracts/action-job.schema.json",
+  "title": "AutoSfera Action Job",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["action_id", "dealer_id", "kind", "payload", "trace_id", "idempotency_key"],
+  "properties": {
+    "action_id": {"type": "string", "format": "uuid"},
+    "dealer_id": {"type": "string", "minLength": 1, "maxLength": 120},
+    "kind": {"enum": ["test_drive", "service"]},
+    "payload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["phone"],
+      "properties": {
+        "customer_name": {"type": ["string", "null"], "maxLength": 160},
+        "phone": {"type": "string", "minLength": 7, "maxLength": 32},
+        "vehicle": {"type": ["string", "null"], "maxLength": 160},
+        "preferred_at": {"type": ["string", "null"], "maxLength": 120},
+        "comment": {"type": ["string", "null"], "maxLength": 2000}
+      }
+    },
+    "trace_id": {"type": "string", "format": "uuid"},
+    "idempotency_key": {"type": "string", "minLength": 8, "maxLength": 200}
+  }
+}

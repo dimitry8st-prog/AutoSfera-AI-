@@ -1,4 +1,4 @@
-# n8n research gateway
+# n8n gateways
 
 n8n is the only component allowed to call the Langflow research flow. AutoSfera never exposes Langflow directly.
 
@@ -12,3 +12,23 @@ Required workflow:
 6. POST the signed result to `/api/research/callback`.
 
 Recommended limits: three attempts with exponential delay, one logical callback, no secrets in an exported workflow. The exact n8n export is environment-specific and must be committed only after credentials are removed.
+
+## Action Gateway
+
+`action-gateway.workflow.json` is an importable, inactive demo adapter for the
+`propose -> approve -> execute -> callback` path. It never receives a job before
+an authorized AutoSfera employee approves it. The API signs every request and
+n8n signs every callback with `ACTION_WEBHOOK_SECRET`.
+
+Required n8n environment variables:
+
+- `ACTION_WEBHOOK_SECRET` — the same strong secret as in the API;
+- `AUTOSFERA_API_URL` — server-side API URL, never a browser localhost URL;
+- `NODE_FUNCTION_ALLOW_BUILTIN=crypto` — permits the Code nodes to calculate HMAC.
+
+Import the workflow, set the variables, replace the demo result node with a
+real CRM/DMS adapter, test with non-production data, and only then activate the
+production webhook. n8n must not connect directly to AutoSfera's database.
+The workflow enables n8n's **Raw Body** webhook option so the HMAC is calculated
+over the same bytes sent by the API. See the official
+[Webhook node documentation](https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.webhook/).

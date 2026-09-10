@@ -8,6 +8,19 @@
 
 Актуальная спецификация пилота: [`docs/COMMERCIAL_PILOT.md`](docs/COMMERCIAL_PILOT.md).
 
+## Обновление от 10.09.2026 — Action Gateway
+
+В проект добавлен контролируемый шлюз внешних действий: агент формирует предложение, уполномоченный сотрудник подтверждает его, после чего действие выполняется один раз и фиксируется в журнале аудита.
+
+- заявки на тест-драйв и сервис больше не выполняются напрямую из чата;
+- права подтверждения разделены между ролями продаж, сервиса и администратора;
+- добавлены идемпотентность, безопасное восстановление после перезапуска и защита от повторного выполнения;
+- предусмотрены HMAC-подпись для n8n, обработка таймаутов и состояние `delivery_unknown`;
+- добавлены операционные логи без имени, телефона и содержимого клиентского запроса;
+- протестированы успешные, ошибочные, повторные и ролевые сценарии.
+
+Полный перечень исправлений, дат, проверок и оставшихся ограничений: [`docs/CORRECTIONS_2026-09-10.md`](docs/CORRECTIONS_2026-09-10.md).
+
 > Пакет Python пока сохраняет техническое имя `autonova`, чтобы не ломать существующие интеграции. Публичный продукт и API называются AutoSfera AI.
 
 ## Возможности версии 2.0
@@ -87,6 +100,8 @@
 | Подписанные токены и роли `admin` / `employee` | ✅ |
 | Постоянные сессии и кабинет заявок | ✅ |
 | Защищённый Job API n8n/Langflow + human approval | ✅ |
+| Action Gateway: propose → approve → execute → audit | ✅ (demo CRM), готов адаптер n8n |
+| Action Gateway observability without customer payloads in logs | ✅ |
 | Live CRM/DMS и vector DB | ❌ вне демо-пилота |
 
 Соответствие пилоту: оркестратор, 4 агента, 17 Skills, KB, RAG, заявки, аналитика, роли, изоляция `dealer_id`, эскалации и Least Privilege.
@@ -223,6 +238,9 @@ cp .env.example .env
 | `DEMO_SERVICE_PASSWORD` | `service-demo` | локальный вход сервиса без `.env` |
 | `CORS_ORIGINS` | localhost | разрешённые источники через запятую |
 | `RESEARCH_WEBHOOK_URL` | — | защищённый webhook n8n |
+| `ACTION_GATEWAY_MODE` | `mock` | `mock` для демо-CRM или `n8n` |
+| `ACTION_WEBHOOK_URL` | — | production webhook n8n для одобренных действий |
+| `ACTION_WEBHOOK_SECRET` | demo secret | отдельный HMAC-секрет Action Gateway |
 | `RESEARCH_WEBHOOK_SECRET` | demo-only | HMAC-подпись запросов и callback |
 
 Пример `.env` для реального LLM:
@@ -272,6 +290,10 @@ LOG_LEVEL=INFO
 | `GET` | `/api/analytics/summary` | защищённая сводка салона |
 | `POST/GET` | `/api/research/jobs` | асинхронные исследования с идемпотентностью |
 | `POST` | `/api/research/callback` | подписанный callback n8n |
+| `GET` | `/api/actions` | очередь действий для сотрудников |
+| `POST` | `/api/actions/{id}/review` | approve/reject с проверкой роли |
+| `POST` | `/api/actions/{id}/retry` | повтор неуспешного действия |
+| `POST` | `/api/actions/callback` | подписанный результат n8n |
 | `POST` | `/api/research/jobs/{id}/review` | approve/edit/reject перед публикацией в KB |
 | `POST` | `/api/channels/{name}` | защищённые stub-каналы интеграций |
 

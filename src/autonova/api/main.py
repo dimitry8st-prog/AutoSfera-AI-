@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import asyncio
+import hashlib
+import json
 from contextlib import asynccontextmanager
 from functools import lru_cache
 from typing import Any, Callable
@@ -13,7 +16,11 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from autonova.agents import AGENT_META
-from autonova.auth import Actor, create_token, decode_token, verify_demo_credentials, verify_webhook
+from autonova.action_gateway import can_approve, execute_action
+from autonova.auth import (
+    Actor, create_token, decode_token, verify_action_webhook,
+    verify_demo_credentials, verify_webhook,
+)
 from autonova.channels import build_channels
 from autonova.config import ROOT_DIR, get_settings
 from autonova.logging import get_logger, setup_logging
@@ -66,6 +73,8 @@ class ChatResponse(BaseModel):
     rag_ids: list[str]
     collected_fields: dict[str, Any] = Field(default_factory=dict)
     request_id: str | None = None
+    action_id: str | None = None
+    action_status: str | None = None
     routing_reason: str | None = None
 
 
@@ -105,6 +114,11 @@ class ResearchReviewRequest(BaseModel):
     content: str | None = Field(default=None, max_length=30000)
 
 
+class ActionReviewRequest(BaseModel):
+    decision: str = Field(..., pattern="^(approve|reject)$")
+    note: str | None = Field(default=None, max_length=2000)
+
+
 @lru_cache
 def get_orchestrator() -> AIOrchestrator:
     setup_logging()
@@ -124,8 +138,22 @@ def create_app() -> FastAPI:
     @asynccontextmanager
     async def lifespan(_app: FastAPI):
         orch = get_orchestrator()
+        recovery_tasks: set[asyncio.Task[Any]] = set()
+        for action in get_store().list_action_jobs(settings.dealer_id, 500):
+            if action["status"] == "approved":
+                logger.info(
+                    "action_recovery_scheduled dealer_id=%s action_id=%s trace_id=%s",
+                    settings.dealer_id, action["id"], action["trace_id"],
+                )
+                task = asyncio.create_task(
+                    asyncio.to_thread(execute_action, get_store(), settings.dealer_id, action["id"])
+                )
+                recovery_tasks.add(task)
+                task.add_done_callback(recovery_tasks.discard)
         logger.info("API started; sessions=%s", len(orch.sessions))
         yield
+        if recovery_tasks:
+            await asyncio.gather(*recovery_tasks, return_exceptions=True)
 
     app = FastAPI(
         title=settings.app_name,
@@ -166,6 +194,11 @@ def create_app() -> FastAPI:
             "orchestration": {
                 "engine": orch.orchestrator_mode,
                 "nodes": list(orch.graph_nodes) if orch.graph is not None else [],
+            },
+            "action_gateway": {
+                "mode": settings.action_gateway_mode,
+                "approval_required": True,
+                "kinds": ["test_drive", "service"],
             },
         }
 
@@ -262,23 +295,38 @@ def create_app() -> FastAPI:
             escalated=result.escalated,
         )
         request_id = None
+        action_id = None
+        action_status = None
         request_kind = {
             "test_drive_booking": "test_drive",
             "service_booking": "service",
         }.get(result.skill or "")
         if request_kind and result.collected_fields.get("phone"):
-            source_ref = f"chat:{result.session_id}:{result.skill}"
-            existing = store.find_request_by_source_ref(actor.dealer_id, source_ref)
-            request_row = existing or store.create_request(
+            action_payload = {
+                "phone": result.collected_fields.get("phone"),
+                "vehicle": result.collected_fields.get("vehicle"),
+                "preferred_at": result.collected_fields.get("preferred_at"),
+                "comment": "Предложено подтверждённым сценарием чата",
+            }
+            payload_fingerprint = hashlib.sha256(
+                json.dumps(action_payload, ensure_ascii=False, sort_keys=True).encode()
+            ).hexdigest()[:20]
+            action, _created = store.create_action_job(
                 actor.dealer_id,
+                actor.subject,
+                result.session_id,
                 request_kind,
-                phone=result.collected_fields.get("phone"),
-                vehicle=result.collected_fields.get("vehicle"),
-                comment="Автоматически создано из подтверждённого сценария чата",
-                source="web-chat",
-                source_ref=source_ref,
+                action_payload,
+                f"chat:{result.session_id}:{result.skill}:{payload_fingerprint}",
+                str(uuid4()),
             )
-            request_id = request_row["id"]
+            action_id = action["id"]
+            action_status = action["status"]
+            logger.info(
+                "action_proposal_%s dealer_id=%s action_id=%s trace_id=%s kind=%s session_id=%s",
+                "created" if _created else "reused", actor.dealer_id, action_id,
+                action["trace_id"], request_kind, result.session_id,
+            )
         return ChatResponse(
             session_id=result.session_id,
             channel=result.channel,
@@ -292,6 +340,8 @@ def create_app() -> FastAPI:
             rag_ids=result.rag_ids,
             collected_fields=result.collected_fields,
             request_id=request_id,
+            action_id=action_id,
+            action_status=action_status,
             routing_reason=result.routing_reason,
         )
 
@@ -346,6 +396,119 @@ def create_app() -> FastAPI:
         actor: Actor = Depends(require_roles("admin", "sales", "service", "employee")),
     ) -> dict[str, Any]:
         return get_store().analytics(actor.dealer_id)
+
+    @app.get("/api/actions")
+    def list_actions(
+        limit: int = 100,
+        actor: Actor = Depends(require_roles("admin", "sales", "service", "employee")),
+    ) -> dict[str, Any]:
+        return {"items": get_store().list_action_jobs(actor.dealer_id, max(1, min(limit, 500)))}
+
+    @app.get("/api/actions/{action_id}")
+    def get_action(
+        action_id: str,
+        actor: Actor = Depends(require_roles("admin", "sales", "service", "employee")),
+    ) -> dict[str, Any]:
+        job = get_store().get_action_job(actor.dealer_id, action_id)
+        if job is None:
+            raise HTTPException(status_code=404, detail="action not found")
+        return job
+
+    @app.get("/api/actions/{action_id}/events")
+    def get_action_events(
+        action_id: str,
+        actor: Actor = Depends(require_roles("admin", "sales", "service", "employee")),
+    ) -> dict[str, Any]:
+        if get_store().get_action_job(actor.dealer_id, action_id) is None:
+            raise HTTPException(status_code=404, detail="action not found")
+        return {"items": get_store().list_action_events(actor.dealer_id, action_id)}
+
+    @app.post("/api/actions/{action_id}/review")
+    def review_action(
+        action_id: str,
+        body: ActionReviewRequest,
+        background: BackgroundTasks,
+        actor: Actor = Depends(require_roles("admin", "sales", "service")),
+    ) -> dict[str, Any]:
+        store = get_store()
+        job = store.get_action_job(actor.dealer_id, action_id)
+        if job is None:
+            raise HTTPException(status_code=404, detail="action not found")
+        if not can_approve(job["kind"], actor.role):
+            raise HTTPException(status_code=403, detail="role cannot approve this action kind")
+        updated, changed = store.review_action_job(
+            actor.dealer_id, action_id, body.decision, actor.subject, body.note
+        )
+        if not changed:
+            raise HTTPException(status_code=409, detail=f"action is already {job['status']}")
+        logger.info(
+            "action_reviewed dealer_id=%s action_id=%s trace_id=%s decision=%s actor=%s role=%s",
+            actor.dealer_id, action_id, job["trace_id"], body.decision, actor.subject, actor.role,
+        )
+        if body.decision == "approve":
+            background.add_task(execute_action, store, actor.dealer_id, action_id)
+        return {"job": updated}
+
+    @app.post("/api/actions/{action_id}/retry")
+    def retry_action(
+        action_id: str,
+        background: BackgroundTasks,
+        actor: Actor = Depends(require_roles("admin", "sales", "service")),
+    ) -> dict[str, Any]:
+        store = get_store()
+        job = store.get_action_job(actor.dealer_id, action_id)
+        if job is None:
+            raise HTTPException(status_code=404, detail="action not found")
+        if not can_approve(job["kind"], actor.role):
+            raise HTTPException(status_code=403, detail="role cannot retry this action kind")
+        updated, changed = store.retry_action_job(actor.dealer_id, action_id, actor.subject)
+        if not changed:
+            raise HTTPException(status_code=409, detail="only failed actions can be retried")
+        logger.info(
+            "action_retry_requested dealer_id=%s action_id=%s trace_id=%s actor=%s role=%s",
+            actor.dealer_id, action_id, job["trace_id"], actor.subject, actor.role,
+        )
+        background.add_task(execute_action, store, actor.dealer_id, action_id)
+        return {"job": updated}
+
+    @app.post("/api/actions/callback")
+    async def action_callback(
+        request: Request,
+        x_autosfera_signature: str = Header(default=""),
+    ) -> dict[str, Any]:
+        raw = await request.body()
+        if not verify_action_webhook(raw, x_autosfera_signature):
+            raise HTTPException(status_code=401, detail="invalid webhook signature")
+        try:
+            payload = await request.json()
+            action_id = str(payload["action_id"])
+            dealer_id = str(payload["dealer_id"])
+            trace_id = str(payload["trace_id"])
+            status = str(payload["status"])
+            result = payload.get("result")
+            error = payload.get("error")
+        except (KeyError, TypeError, ValueError) as exc:
+            raise HTTPException(status_code=422, detail="invalid callback contract") from exc
+        if status not in {"completed", "failed"} or (result is not None and not isinstance(result, dict)):
+            raise HTTPException(status_code=422, detail="invalid callback status or result")
+        store = get_store()
+        job = store.get_action_job(dealer_id, action_id)
+        if job is None:
+            raise HTTPException(status_code=404, detail="action not found")
+        if trace_id != job["trace_id"]:
+            raise HTTPException(status_code=409, detail="trace_id does not match action")
+        if job["status"] in {"completed", "failed"}:
+            return {"accepted": False, "status": job["status"]}
+        if job["status"] not in {"running", "delivery_unknown"}:
+            raise HTTPException(status_code=409, detail="action is not running")
+        updated, changed = store.finish_action_job(
+            dealer_id, action_id, status, "n8n", result=result, error=str(error) if error else None
+        )
+        logger.info(
+            "action_callback dealer_id=%s action_id=%s trace_id=%s status=%s accepted=%s",
+            dealer_id, action_id, trace_id, status, changed,
+        )
+        return {"accepted": changed, "job": updated}
 
     @app.get("/api/inventory")
     def inventory() -> dict[str, Any]:

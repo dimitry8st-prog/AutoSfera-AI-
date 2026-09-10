@@ -55,6 +55,13 @@ class Settings(BaseSettings):
     research_webhook_url: str = Field(default="", validation_alias="RESEARCH_WEBHOOK_URL")
     research_webhook_secret: str = Field(default="research-demo-secret-change-me", validation_alias="RESEARCH_WEBHOOK_SECRET")
     research_timeout_seconds: float = Field(default=15.0, validation_alias="RESEARCH_TIMEOUT_SECONDS")
+    action_gateway_mode: str = Field(default="mock", validation_alias="ACTION_GATEWAY_MODE")
+    action_webhook_url: str = Field(default="", validation_alias="ACTION_WEBHOOK_URL")
+    action_webhook_secret: str = Field(
+        default="action-demo-secret-change-me", validation_alias="ACTION_WEBHOOK_SECRET"
+    )
+    action_timeout_seconds: float = Field(default=10.0, validation_alias="ACTION_TIMEOUT_SECONDS")
+    action_max_attempts: int = Field(default=3, validation_alias="ACTION_MAX_ATTEMPTS")
 
     # LLM: mock by default for offline/tests; set LLM_MODE=openai to use API
     llm_mode: str = Field(default="mock", validation_alias="LLM_MODE")
