@@ -38,7 +38,10 @@ def test_sandbox_compose_keeps_n8n_local_and_secrets_external() -> None:
     assert "http://n8n:5678/webhook/autosfera-actions" in compose
     assert "NODE_FUNCTION_ALLOW_BUILTIN: crypto" in compose
     assert 'command: ["import:workflow", "--input=/workflows/action-gateway.workflow.json"]' in compose
-    assert 'command: ["update:workflow", "--all", "--active=true"]' in compose
+    assert (
+        'command: ["publish:workflow", "--id=autosfera-action-gateway-sandbox"]'
+        in compose
+    )
 
 
 def test_sandbox_scripts_do_not_embed_customer_or_gateway_secrets() -> None:
@@ -46,8 +49,10 @@ def test_sandbox_scripts_do_not_embed_customer_or_gateway_secrets() -> None:
     smoke = (ROOT / "scripts/smoke_action_gateway_n8n.py").read_text(encoding="utf-8")
     assert "secrets.token_hex" in setup
     assert ".env.n8n.local" in setup
+    assert "compose run --rm n8n-publish" in setup
     assert "ACTION_WEBHOOK_SECRET=" not in smoke
     assert "+79990000000" in smoke
+    assert 'response.get("job", response)' in smoke
 
 
 def test_container_runtime_paths_are_configurable_and_writable(tmp_path: Path) -> None:

@@ -52,11 +52,11 @@ services:
       - ./integrations/n8n:/workflows:ro
     networks: [backend]
 
-  n8n-activate:
+  n8n-publish:
     image: n8nio/n8n:2.37.10
     profiles: [setup]
     environment: *n8n_environment
-    command: ["update:workflow", "--all", "--active=true"]
+    command: ["publish:workflow", "--id=autosfera-action-gateway-sandbox"]
     volumes:
       - n8n_sandbox_data:/home/node/.n8n
       - ./integrations/n8n:/workflows:ro

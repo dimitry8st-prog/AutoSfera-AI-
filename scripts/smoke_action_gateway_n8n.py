@@ -65,7 +65,10 @@ def main() -> int:
     for _ in range(30):
         status, response = request_json("GET", f"/api/actions/{action_id}", token=token)
         require(status == 200, f"action lookup failed: {status}")
-        job = response["job"]
+        # The lookup endpoint returns the action resource directly. Accepting a
+        # wrapped form as well keeps this smoke client forward-compatible with
+        # list/review responses, which use {"job": ...}.
+        job = response.get("job", response)
         if job["status"] in {"completed", "failed", "delivery_unknown"}:
             break
         time.sleep(1)
