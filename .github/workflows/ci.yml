@@ -29,6 +29,9 @@ jobs:
         run: |
           python -m json.tool contracts/research-job.schema.json >/dev/null
           python -m json.tool contracts/research-callback.schema.json >/dev/null
+          python -m json.tool contracts/action-job.schema.json >/dev/null
+          python -m json.tool contracts/action-callback.schema.json >/dev/null
+          python -m json.tool integrations/n8n/action-gateway.workflow.json >/dev/null
 
   postgres-integration:
     runs-on: ubuntu-latest

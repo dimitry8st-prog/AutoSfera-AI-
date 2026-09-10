@@ -94,3 +94,13 @@ def sign_webhook(payload: bytes) -> str:
 
 def verify_webhook(payload: bytes, signature: str) -> bool:
     return hmac.compare_digest(sign_webhook(payload), signature)
+
+
+def sign_action_webhook(payload: bytes) -> str:
+    return hmac.new(
+        get_settings().action_webhook_secret.encode(), payload, hashlib.sha256
+    ).hexdigest()
+
+
+def verify_action_webhook(payload: bytes, signature: str) -> bool:
+    return hmac.compare_digest(sign_action_webhook(payload), signature)

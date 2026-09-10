@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://autosfera.example/contracts/action-callback.schema.json",
+  "title": "AutoSfera Action Callback",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["action_id", "dealer_id", "trace_id", "status"],
+  "properties": {
+    "action_id": {"type": "string", "format": "uuid"},
+    "dealer_id": {"type": "string", "minLength": 1, "maxLength": 120},
+    "trace_id": {"type": "string", "format": "uuid"},
+    "status": {"enum": ["completed", "failed"]},
+    "result": {"type": ["object", "null"]},
+    "error": {"type": ["string", "null"], "maxLength": 2000}
+  }
+}

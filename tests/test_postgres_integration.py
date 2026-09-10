@@ -49,7 +49,32 @@ def test_postgres_store_contract_and_dealer_isolation() -> None:
         analytics = store.analytics(dealer_id)
         assert analytics["requests"] == 1
         assert analytics["requests_by_kind"] == {"test_drive": 1}
+
+        action, created = store.create_action_job(
+            dealer_id, "ci-user", "ci-session", "test_drive",
+            {"phone": "+79990000000", "vehicle": "Nova Drive"},
+            "ci-action-1", str(uuid4()),
+        )
+        duplicate, duplicate_created = store.create_action_job(
+            dealer_id, "ci-user", "ci-session", "test_drive",
+            {"phone": "+70000000000"}, "ci-action-1", str(uuid4()),
+        )
+        assert created and not duplicate_created and duplicate["id"] == action["id"]
+        approved, changed = store.review_action_job(
+            dealer_id, action["id"], "approve", "ci-sales"
+        )
+        assert changed and approved["status"] == "approved"
+        running = store.claim_action_job(dealer_id, action["id"])
+        assert running and running["status"] == "running"
+        completed, changed = store.finish_action_job(
+            dealer_id, action["id"], "completed", "ci-n8n", result={"external_id": "ci-1"}
+        )
+        assert changed and completed["status"] == "completed"
+        assert len(store.list_action_events(dealer_id, action["id"])) == 4
+        assert store.list_action_jobs(other_dealer_id) == []
     finally:
         with store.connect() as db, db.cursor() as cur:
+            cur.execute("DELETE FROM action_events WHERE dealer_id IN (%s, %s)", (dealer_id, other_dealer_id))
+            cur.execute("DELETE FROM action_jobs WHERE dealer_id IN (%s, %s)", (dealer_id, other_dealer_id))
             cur.execute("DELETE FROM sessions WHERE dealer_id IN (%s, %s)", (dealer_id, other_dealer_id))
             cur.execute("DELETE FROM requests WHERE dealer_id IN (%s, %s)", (dealer_id, other_dealer_id))
