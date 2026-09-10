@@ -1,5 +1,6 @@
 {
-  "name": "AutoSfera Action Gateway (demo adapter)",
+  "id": "autosfera-action-gateway-sandbox",
+  "name": "AutoSfera Action Gateway (sandbox adapter)",
   "nodes": [
     {
       "parameters": {"httpMethod": "POST", "path": "autosfera-actions", "responseMode": "lastNode", "options": {"rawBody": true}},
@@ -19,7 +20,7 @@
       "position": [240, 0]
     },
     {
-      "parameters": {"jsCode": "const crypto = require('crypto');\nconst callback = {action_id: $json.action_id, dealer_id: $json.dealer_id, trace_id: $json.trace_id, status: 'completed', result: {provider: 'n8n-demo', external_id: $execution.id}};\nconst raw = JSON.stringify(callback);\nconst signature = crypto.createHmac('sha256', $env.ACTION_WEBHOOK_SECRET).update(raw).digest('hex');\nreturn [{json: {raw, signature}}];"},
+      "parameters": {"jsCode": "const crypto = require('crypto');\nconst callback = {action_id: $json.action_id, dealer_id: $json.dealer_id, trace_id: $json.trace_id, status: 'completed', result: {provider: 'n8n-sandbox', external_id: $execution.id}};\nconst raw = JSON.stringify(callback);\nconst signature = crypto.createHmac('sha256', $env.ACTION_WEBHOOK_SECRET).update(raw).digest('hex');\nreturn [{json: {raw, signature}}];"},
       "id": "7cd77c9f-9000-4000-8000-000000000003",
       "name": "Prepare Signed Callback",
       "type": "n8n-nodes-base.code",

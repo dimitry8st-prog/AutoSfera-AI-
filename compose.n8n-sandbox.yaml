@@ -1,0 +1,61 @@
+services:
+  api:
+    depends_on:
+      n8n:
+        condition: service_healthy
+    environment:
+      ACTION_GATEWAY_MODE: n8n
+      ACTION_WEBHOOK_URL: http://n8n:5678/webhook/autosfera-actions
+
+  n8n:
+    image: n8nio/n8n:2.37.10
+    restart: unless-stopped
+    environment: &n8n_environment
+      N8N_HOST: n8n
+      N8N_LISTEN_ADDRESS: 0.0.0.0
+      N8N_PORT: 5678
+      N8N_PROTOCOL: http
+      N8N_EDITOR_BASE_URL: http://127.0.0.1:${N8N_PORT:-5678}
+      WEBHOOK_URL: http://127.0.0.1:${N8N_PORT:-5678}/
+      N8N_ENCRYPTION_KEY: ${N8N_ENCRYPTION_KEY:?Set N8N_ENCRYPTION_KEY in .env.n8n.local}
+      N8N_SECURE_COOKIE: "false"
+      N8N_DIAGNOSTICS_ENABLED: "false"
+      N8N_PERSONALIZATION_ENABLED: "false"
+      N8N_BLOCK_ENV_ACCESS_IN_NODE: "false"
+      NODE_FUNCTION_ALLOW_BUILTIN: crypto
+      ACTION_WEBHOOK_SECRET: ${ACTION_WEBHOOK_SECRET:?Set ACTION_WEBHOOK_SECRET in .env.n8n.local}
+      AUTOSFERA_API_URL: http://api:8000
+    ports:
+      - "127.0.0.1:${N8N_PORT:-5678}:5678"
+    volumes:
+      - n8n_sandbox_data:/home/node/.n8n
+      - ./integrations/n8n:/workflows:ro
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >-
+          node -e "fetch('http://127.0.0.1:5678/healthz').then(r =>
+          {if (!r.ok) process.exit(1)}).catch(() => process.exit(1))"
+      interval: 5s
+      timeout: 3s
+      retries: 30
+      start_period: 20s
+    networks: [backend]
+
+  n8n-import:
+    image: n8nio/n8n:2.37.10
+    profiles: [setup]
+    environment: *n8n_environment
+    command:
+      - /bin/sh
+      - -ec
+      - |
+        n8n import:workflow --input=/workflows/action-gateway.workflow.json
+        n8n update:workflow --all --active=true
+    volumes:
+      - n8n_sandbox_data:/home/node/.n8n
+      - ./integrations/n8n:/workflows:ro
+    networks: [backend]
+
+volumes:
+  n8n_sandbox_data:

@@ -32,3 +32,29 @@ production webhook. n8n must not connect directly to AutoSfera's database.
 The workflow enables n8n's **Raw Body** webhook option so the HMAC is calculated
 over the same bytes sent by the API. See the official
 [Webhook node documentation](https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.webhook/).
+
+### Reproducible local sandbox
+
+Run `scripts/setup_n8n_sandbox.sh` from Linux, macOS, WSL or Git Bash with
+Docker Compose installed. The script creates `.env.n8n.local` with random
+local secrets, imports and activates the sandbox workflow, starts PostgreSQL,
+n8n and AutoSfera, and runs a real HTTP smoke test.
+
+The smoke test verifies the complete boundary: chat proposal, human approval,
+signed API-to-n8n request, signed n8n-to-API callback and the four-event audit
+trail. n8n is published on loopback only. The committed workflow remains
+inactive by default; activation happens only inside the isolated sandbox.
+
+Stop the sandbox without deleting its data:
+
+```bash
+docker compose --env-file .env.n8n.local \
+  -f compose.yaml -f compose.n8n-sandbox.yaml down
+```
+
+Delete the sandbox volumes only when their data is no longer needed:
+
+```bash
+docker compose --env-file .env.n8n.local \
+  -f compose.yaml -f compose.n8n-sandbox.yaml down --volumes
+```
