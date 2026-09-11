@@ -20,6 +20,7 @@ COPY migrations ./migrations
 COPY frontend ./frontend
 COPY knowledge_base ./knowledge_base
 COPY prompts ./prompts
+COPY scripts ./scripts
 
 RUN python -m pip install --upgrade pip && python -m pip install .
 

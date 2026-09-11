@@ -84,8 +84,17 @@ class Settings(BaseSettings):
     )
     openai_model: str = Field(default="gpt-5.6", validation_alias="OPENAI_MODEL")
 
-    rag_top_k: int = 6
-    rag_min_score: float = 0.05
+    rag_backend: str = Field(default="tfidf", validation_alias="RAG_BACKEND")
+    rag_top_k: int = Field(default=6, validation_alias="RAG_TOP_K")
+    rag_min_score: float = Field(default=0.05, validation_alias="RAG_MIN_SCORE")
+    rag_vector_min_score: float = Field(default=0.30, validation_alias="RAG_VECTOR_MIN_SCORE")
+    embedding_mode: str = Field(default="openai", validation_alias="EMBEDDING_MODE")
+    embedding_model: str = Field(default="text-embedding-3-small", validation_alias="EMBEDDING_MODEL")
+    embedding_dimensions: int = Field(default=1536, validation_alias="EMBEDDING_DIMENSIONS")
+    embedding_timeout_seconds: float = Field(default=30.0, validation_alias="EMBEDDING_TIMEOUT_SECONDS")
+    embedding_batch_size: int = Field(default=64, validation_alias="EMBEDDING_BATCH_SIZE")
+    rag_chunk_size: int = Field(default=1200, validation_alias="RAG_CHUNK_SIZE")
+    rag_chunk_overlap: int = Field(default=160, validation_alias="RAG_CHUNK_OVERLAP")
 
     @property
     def allowed_origins(self) -> list[str]:

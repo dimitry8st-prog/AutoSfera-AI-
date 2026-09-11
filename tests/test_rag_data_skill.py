@@ -56,6 +56,7 @@ def test_compiler_includes_only_approved_documents(tmp_path: Path) -> None:
     assert (compiled, skipped) == (1, 1)
     payload = __import__("json").loads((output / "sales.json").read_text(encoding="utf-8"))
     assert [item["id"] for item in payload["documents"]] == ["approved-rule"]
+    assert payload["documents"][0]["metadata"]["source_ref"] == "approved/test.docx"
 
 
 def test_compiler_rejects_duplicate_ids(tmp_path: Path) -> None:

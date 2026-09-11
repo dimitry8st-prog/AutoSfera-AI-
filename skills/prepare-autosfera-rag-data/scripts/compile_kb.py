@@ -90,6 +90,11 @@ def compile_documents(source_dir: Path, output_dir: Path) -> tuple[int, int]:
             "title": metadata.get("title"),
             "content": content,
             "tags": metadata.get("tags", []),
+            "metadata": {
+                key: metadata.get(key)
+                for key in ("source_type", "source_ref", "version", "effective_date", "owner", "status")
+                if metadata.get(key) is not None
+            },
         }
         if metadata.get("agent"):
             document["agent"] = metadata["agent"]

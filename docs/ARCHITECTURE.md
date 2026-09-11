@@ -1,6 +1,6 @@
 # Архитектура AutoSfera AI
 
-Стек: Python 3.11+, FastAPI, LangGraph 1.2, JSON Knowledge Base, TF-IDF RAG, Skills, PostgreSQL/SQLite (`dealer_id`), mock/OpenAI LLM.
+Стек: Python 3.11+, FastAPI, LangGraph 1.2, JSON Knowledge Base, TF-IDF fallback или pgvector/HNSW RAG, Skills, PostgreSQL/SQLite (`dealer_id`), mock/OpenAI LLM.
 
 Версия платформы: **2.1.0**.
 

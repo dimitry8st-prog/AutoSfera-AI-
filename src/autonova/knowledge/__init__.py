@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -20,6 +20,7 @@ class Document:
     content: str
     tags: tuple[str, ...]
     agent: str | None = None
+    metadata: dict[str, Any] = field(default_factory=dict)
 
     @property
     def searchable_text(self) -> str:
@@ -110,6 +111,7 @@ class KnowledgeBase:
                         content=item["content"],
                         tags=tuple(item.get("tags", [])),
                         agent=item.get("agent"),
+                        metadata=item.get("metadata", {}),
                     )
                 )
         self._documents = docs
