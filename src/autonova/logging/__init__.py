@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import sys
 from datetime import datetime, timezone
 from logging.handlers import RotatingFileHandler
@@ -13,6 +14,28 @@ from autonova.config import get_settings
 
 
 _configured = False
+
+_EMAIL_RE = re.compile(r"(?i)\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b")
+_PHONE_RE = re.compile(r"(?<!\w)\+?\d[\d\s()\-]{7,}\d(?!\w)")
+
+
+def _redact_phone(match: re.Match[str]) -> str:
+    digits = sum(character.isdigit() for character in match.group(0))
+    return "[PHONE_REDACTED]" if 10 <= digits <= 15 else match.group(0)
+
+
+def _redact_sensitive(value: Any) -> Any:
+    """Remove common contact details from operational dialogue logs."""
+    if isinstance(value, str):
+        value = _EMAIL_RE.sub("[EMAIL_REDACTED]", value)
+        return _PHONE_RE.sub(_redact_phone, value)
+    if isinstance(value, dict):
+        return {key: _redact_sensitive(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_redact_sensitive(item) for item in value]
+    if isinstance(value, tuple):
+        return tuple(_redact_sensitive(item) for item in value)
+    return value
 
 
 def setup_logging(level: str | None = None) -> logging.Logger:
@@ -88,11 +111,12 @@ class DialogueLogger:
         self._logger = get_logger("autonova.dialogues")
 
     def log_event(self, event_type: str, payload: dict[str, Any]) -> None:
+        safe_payload = _redact_sensitive(payload)
         record = {
             "ts": datetime.now(timezone.utc).isoformat(),
             "session_id": self.session_id,
             "event": event_type,
-            **payload,
+            **safe_payload,
         }
         with self.path.open("a", encoding="utf-8") as fh:
             fh.write(json.dumps(record, ensure_ascii=False) + "\n")
@@ -100,7 +124,7 @@ class DialogueLogger:
             "session=%s event=%s payload=%s",
             self.session_id,
             event_type,
-            json.dumps(payload, ensure_ascii=False),
+            json.dumps(safe_payload, ensure_ascii=False),
         )
 
     def log_user_message(self, text: str, channel: str) -> None:

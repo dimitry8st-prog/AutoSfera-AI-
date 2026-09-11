@@ -274,7 +274,7 @@ class PostgresPlatformStore:
         self, dealer_id: str, actor: str, session_id: str | None, kind: str,
         payload: dict[str, Any], idempotency_key: str, trace_id: str,
     ) -> tuple[dict[str, Any], bool]:
-        if kind not in {"test_drive", "service"}:
+        if kind not in {"lead", "test_drive", "service"}:
             raise ValueError("unsupported action kind")
         now = self._now()
         action_id = str(uuid4())

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Подготовка RAG-данных AutoSfera"
+  short_description: "Очищает документы и готовит базу знаний RAG"
+  default_prompt: "Используй $prepare-autosfera-rag-data для подготовки документов к загрузке в RAG AutoSfera AI."

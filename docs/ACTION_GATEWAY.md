@@ -24,6 +24,7 @@ the `trace_id`. A later valid callback can still complete it.
 
 | Kind | Can approve/retry | Can view |
 |---|---|---|
+| `lead` | `admin`, `sales` | all staff roles |
 | `test_drive` | `admin`, `sales` | all staff roles |
 | `service` | `admin`, `service` | all staff roles |
 

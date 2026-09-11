@@ -12,7 +12,7 @@
       "webhookId": "autosfera-actions"
     },
     {
-      "parameters": {"jsCode": "const crypto = require('crypto');\nconst secret = $env.ACTION_WEBHOOK_SECRET;\nif (!secret) throw new Error('ACTION_WEBHOOK_SECRET is not configured');\nconst signature = $json.headers?.['x-autosfera-signature'] || '';\nconst raw = typeof $json.body === 'string' ? $json.body : JSON.stringify($json.body);\nconst expected = crypto.createHmac('sha256', secret).update(raw).digest('hex');\nif (signature.length !== expected.length || !crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expected))) throw new Error('Invalid Action Gateway signature');\nconst job = typeof $json.body === 'string' ? JSON.parse($json.body) : $json.body;\nif (!['test_drive', 'service'].includes(job.kind)) throw new Error('Unsupported action kind');\nreturn [{json: job}];"},
+      "parameters": {"jsCode": "const crypto = require('crypto');\nconst secret = $env.ACTION_WEBHOOK_SECRET;\nif (!secret) throw new Error('ACTION_WEBHOOK_SECRET is not configured');\nconst signature = $json.headers?.['x-autosfera-signature'] || '';\nconst raw = typeof $json.body === 'string' ? $json.body : JSON.stringify($json.body);\nconst expected = crypto.createHmac('sha256', secret).update(raw).digest('hex');\nif (signature.length !== expected.length || !crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expected))) throw new Error('Invalid Action Gateway signature');\nconst job = typeof $json.body === 'string' ? JSON.parse($json.body) : $json.body;\nif (!['lead', 'test_drive', 'service'].includes(job.kind)) throw new Error('Unsupported action kind');\nreturn [{json: job}];"},
       "id": "7cd77c9f-9000-4000-8000-000000000002",
       "name": "Verify and Validate",
       "type": "n8n-nodes-base.code",
