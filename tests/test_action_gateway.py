@@ -95,6 +95,75 @@ def test_chat_proposes_action_without_creating_request(monkeypatch, tmp_path) ->
     assert store.list_requests("main-salon") == []
 
 
+def test_sales_lead_is_collected_across_turns_and_requires_approval(monkeypatch, tmp_path) -> None:
+    client, store = _client(monkeypatch, tmp_path)
+    first = client.post(
+        "/api/chat",
+        json={"message": "Ищу кроссовер до 3 млн и хочу передать заявку менеджеру"},
+    )
+    assert first.status_code == 200
+    assert first.json()["action_id"] is None
+    assert "имя" in first.json()["reply"] and "телефон" in first.json()["reply"]
+
+    second = client.post(
+        "/api/chat",
+        json={
+            "message": "Меня зовут Дмитрий, телефон +79991234567",
+            "session_id": first.json()["session_id"],
+        },
+    )
+    body = second.json()
+    assert second.status_code == 200
+    assert body["skill"] == "vehicle_selection"
+    assert body["action_status"] == "waiting_approval"
+    assert body["collected_fields"]["customer_name"] == "Дмитрий"
+    assert body["collected_fields"]["phone"] == "+79991234567"
+    assert store.list_requests("main-salon") == []
+
+    approved = client.post(
+        f"/api/actions/{body['action_id']}/review",
+        json={"decision": "approve"},
+        headers=_headers(client, "sales"),
+    )
+    assert approved.status_code == 200
+    requests = store.list_requests("main-salon")
+    assert len(requests) == 1
+    assert requests[0]["kind"] == "lead"
+    assert requests[0]["customer_name"] == "Дмитрий"
+    assert requests[0]["phone"] == "+79991234567"
+
+
+def test_sales_lead_duplicate_message_reuses_one_action(monkeypatch, tmp_path) -> None:
+    client, store = _client(monkeypatch, tmp_path)
+    payload = {
+        "message": (
+            "Передайте заявку менеджеру: меня зовут Дмитрий, "
+            "телефон +79991234567, нужен Nova Drive"
+        )
+    }
+    first = client.post("/api/chat", json=payload).json()
+    payload["session_id"] = first["session_id"]
+    second = client.post("/api/chat", json=payload).json()
+    assert first["action_id"] == second["action_id"]
+    assert len(store.list_action_jobs("main-salon")) == 1
+
+
+def test_service_cannot_approve_sales_lead(monkeypatch, tmp_path) -> None:
+    client, store = _client(monkeypatch, tmp_path)
+    action, _ = store.create_action_job(
+        "main-salon", "guest", "session", "lead",
+        {"customer_name": "Дмитрий", "phone": "+79991234567", "vehicle": "Nova Drive"},
+        "lead-role-check", str(uuid4()),
+    )
+    denied = client.post(
+        f"/api/actions/{action['id']}/review",
+        json={"decision": "approve"},
+        headers=_headers(client, "service"),
+    )
+    assert denied.status_code == 403
+    assert store.list_requests("main-salon") == []
+
+
 def test_sales_can_approve_test_drive_but_service_cannot(monkeypatch, tmp_path) -> None:
     client, store = _client(monkeypatch, tmp_path)
     action = _action(store)

@@ -102,7 +102,7 @@
 | Подписанные токены и роли `admin` / `employee` | ✅ |
 | Постоянные сессии и кабинет заявок | ✅ |
 | Защищённый Job API n8n/Langflow + human approval | ✅ |
-| Action Gateway: propose → approve → execute → audit | ✅ (demo CRM), готов адаптер n8n |
+| Action Gateway: lead / test drive / service → approve → execute → audit | ✅ (demo CRM), готов адаптер n8n |
 | Action Gateway observability without customer payloads in logs | ✅ |
 | Live CRM/DMS и vector DB | ❌ вне демо-пилота |
 

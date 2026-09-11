@@ -147,6 +147,36 @@ def _extract_phone(text: str) -> str | None:
     return match.group(1).strip() if match else None
 
 
+def _extract_customer_name(text: str) -> str | None:
+    patterns = (
+        r"(?:меня\s+зовут|имя|фио)\s*[:—-]?\s*([А-ЯЁ][а-яё]+(?:\s+[А-ЯЁ][а-яё]+){0,2})",
+        r"(?:я\s+|клиент\s*[:—-]?\s*)([А-ЯЁ][а-яё]+)(?=\s*[,.;]|\s+телефон)",
+    )
+    for pattern in patterns:
+        match = re.search(pattern, text, flags=re.IGNORECASE)
+        if match:
+            return re.sub(r"\s+", " ", match.group(1)).strip()
+    return None
+
+
+def _lead_requested(text: str) -> bool:
+    lowered = text.lower().replace("ё", "е")
+    return any(
+        phrase in lowered
+        for phrase in (
+            "оставить заявку",
+            "оставлю заявку",
+            "передать заявку",
+            "передайте заявку",
+            "передайте менеджеру",
+            "свяжите с менеджером",
+            "пусть менеджер",
+            "перезвоните",
+            "позвоните мне",
+        )
+    )
+
+
 def _extract_vehicle(text: str) -> str | None:
     match = re.search(r"\b(Nova\s+(?:Comfort|Drive|Cargo|Classic))\b", text, flags=re.IGNORECASE)
     return match.group(1).title() if match else None
@@ -347,6 +377,9 @@ def vehicle_selection(message: str, chunks: list[RetrievedChunk], ctx: dict[str,
     combined = _user_constraint_text(message, ctx)
     body = _extract_body_type(combined)
     budget = _extract_budget(combined)
+    phone = _extract_phone(combined)
+    customer_name = _extract_customer_name(combined)
+    wants_lead = _lead_requested(combined)
     matches = [m for m in models if _model_matches(m, body, budget)]
 
     if body or budget is not None:
@@ -382,15 +415,32 @@ def vehicle_selection(message: str, chunks: list[RetrievedChunk], ctx: dict[str,
                 f"Минимальная цена в этой категории — {floor['line']}.\n\n"
                 "Цены указаны в рублях. Могу подобрать в другом бюджете или передать заявку менеджеру."
             )
+        fields = {
+            "body_type": body,
+            "budget": budget,
+            "vehicle": matches[0]["name"] if len(matches) == 1 else _extract_vehicle(combined),
+            "customer_name": customer_name,
+            "phone": phone,
+            "lead_requested": wants_lead,
+        }
+        if wants_lead:
+            missing_contact = [
+                label
+                for label, value in (("имя", customer_name), ("телефон", phone))
+                if not value
+            ]
+            if missing_contact:
+                reply += "\n\nЧтобы передать заявку менеджеру, укажите " + " и ".join(missing_contact) + "."
+            else:
+                reply += (
+                    "\n\nДанные для заявки собраны. Она поступит менеджеру на подтверждение; "
+                    "до подтверждения запись в CRM не создаётся."
+                )
         return SkillResult(
             "vehicle_selection",
             reply,
             rag_ids=ids,
-            collected_fields={
-                "body_type": body,
-                "budget": budget,
-                "vehicle": matches[0]["name"] if len(matches) == 1 else None,
-            },
+            collected_fields={key: value for key, value in fields.items() if value is not None},
         )
 
     lines = "\n".join(f"• {item['line']}." for item in models)
@@ -399,7 +449,31 @@ def vehicle_selection(message: str, chunks: list[RetrievedChunk], ctx: dict[str,
         f"{lines}\n\n"
         "Уточните бюджет, тип кузова и предпочтения по комплектации."
     )
-    return SkillResult("vehicle_selection", reply, rag_ids=ids)
+    fields = {
+        "vehicle": _extract_vehicle(combined),
+        "customer_name": customer_name,
+        "phone": phone,
+        "lead_requested": wants_lead,
+    }
+    if wants_lead:
+        missing_contact = [
+            label
+            for label, value in (("имя", customer_name), ("телефон", phone))
+            if not value
+        ]
+        if missing_contact:
+            reply += "\n\nЧтобы передать заявку менеджеру, укажите " + " и ".join(missing_contact) + "."
+        else:
+            reply += (
+                "\n\nДанные для заявки собраны. Она поступит менеджеру на подтверждение; "
+                "до подтверждения запись в CRM не создаётся."
+            )
+    return SkillResult(
+        "vehicle_selection",
+        reply,
+        rag_ids=ids,
+        collected_fields={key: value for key, value in fields.items() if value is not None},
+    )
 
 
 def _extract_year(text: str) -> str | None:

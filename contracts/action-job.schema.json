@@ -8,7 +8,7 @@
   "properties": {
     "action_id": {"type": "string", "format": "uuid"},
     "dealer_id": {"type": "string", "minLength": 1, "maxLength": 120},
-    "kind": {"enum": ["test_drive", "service"]},
+    "kind": {"enum": ["lead", "test_drive", "service"]},
     "payload": {
       "type": "object",
       "additionalProperties": false,

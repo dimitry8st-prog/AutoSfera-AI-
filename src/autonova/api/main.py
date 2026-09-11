@@ -198,7 +198,7 @@ def create_app() -> FastAPI:
             "action_gateway": {
                 "mode": settings.action_gateway_mode,
                 "approval_required": True,
-                "kinds": ["test_drive", "service"],
+                "kinds": ["lead", "test_drive", "service"],
             },
         }
 
@@ -298,11 +298,20 @@ def create_app() -> FastAPI:
         action_id = None
         action_status = None
         request_kind = {
+            "vehicle_selection": "lead",
             "test_drive_booking": "test_drive",
             "service_booking": "service",
         }.get(result.skill or "")
-        if request_kind and result.collected_fields.get("phone"):
+        should_propose = request_kind and result.collected_fields.get("phone")
+        if request_kind == "lead":
+            should_propose = bool(
+                should_propose
+                and result.collected_fields.get("customer_name")
+                and result.collected_fields.get("lead_requested")
+            )
+        if should_propose:
             action_payload = {
+                "customer_name": result.collected_fields.get("customer_name"),
                 "phone": result.collected_fields.get("phone"),
                 "vehicle": result.collected_fields.get("vehicle"),
                 "preferred_at": result.collected_fields.get("preferred_at"),

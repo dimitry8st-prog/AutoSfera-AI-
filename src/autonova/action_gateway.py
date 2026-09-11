@@ -12,8 +12,9 @@ from autonova.logging import get_logger
 
 
 logger = get_logger("autonova.action_gateway")
-ACTION_KINDS = frozenset({"test_drive", "service"})
+ACTION_KINDS = frozenset({"lead", "test_drive", "service"})
 APPROVER_ROLES = {
+    "lead": frozenset({"admin", "sales"}),
     "test_drive": frozenset({"admin", "sales"}),
     "service": frozenset({"admin", "service"}),
 }

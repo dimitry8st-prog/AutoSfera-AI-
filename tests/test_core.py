@@ -416,6 +416,46 @@ def test_dialogue_logger_writes_jsonl(tmp_path: Path, monkeypatch: pytest.Monkey
     get_settings.cache_clear()
 
 
+def test_dialogue_logger_redacts_contact_details(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    from autonova.config import get_settings
+
+    get_settings.cache_clear()
+    monkeypatch.setenv("DIALOGUES_DIR", str(tmp_path))
+    settings = get_settings()
+    settings.dialogues_dir = tmp_path
+    dlg = DialogueLogger("pii-session")
+    dlg.log_user_message("Иван, +7 999 123-45-67, ivan@example.ru", "web")
+    dlg.log_agent_reply(
+        "SALES_AGENT",
+        "vehicle_selection",
+        "Записал телефон +79991234567 и ivan@example.ru",
+        False,
+        [],
+    )
+    content = dlg.path.read_text(encoding="utf-8")
+    assert "+7 999 123-45-67" not in content
+    assert "+79991234567" not in content
+    assert "ivan@example.ru" not in content
+    assert content.count("[PHONE_REDACTED]") == 2
+    assert content.count("[EMAIL_REDACTED]") == 2
+    get_settings.cache_clear()
+
+
+def test_dialogue_logger_keeps_non_phone_numbers(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    from autonova.config import get_settings
+
+    get_settings.cache_clear()
+    monkeypatch.setenv("DIALOGUES_DIR", str(tmp_path))
+    settings = get_settings()
+    settings.dialogues_dir = tmp_path
+    dlg = DialogueLogger("numbers-session")
+    dlg.log_user_message("Бюджет 2 500 000 рублей, срок 3 года", "web")
+    content = dlg.path.read_text(encoding="utf-8")
+    assert "2 500 000" in content
+    assert "[PHONE_REDACTED]" not in content
+    get_settings.cache_clear()
+
+
 def test_extract_json_object_from_noise():
     raw = 'Конечно:\n{"agent":"SERVICE_AGENT","greeting":"ok"}\n'
     data = extract_json_object(raw)
