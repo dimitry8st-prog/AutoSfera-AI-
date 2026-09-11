@@ -1,6 +1,6 @@
 services:
   postgres:
-    image: postgres:17-alpine
+    image: pgvector/pgvector:pg17
     restart: unless-stopped
     environment:
       POSTGRES_DB: autosfera
@@ -28,6 +28,15 @@ services:
       DEALER_ID: ${DEALER_ID:-main-salon}
       DEALER_NAME: ${DEALER_NAME:-AutoSfera Demo Salon}
       LLM_MODE: ${LLM_MODE:-mock}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      RAG_BACKEND: ${RAG_BACKEND:-tfidf}
+      EMBEDDING_MODE: ${EMBEDDING_MODE:-openai}
+      EMBEDDING_MODEL: ${EMBEDDING_MODEL:-text-embedding-3-small}
+      EMBEDDING_DIMENSIONS: ${EMBEDDING_DIMENSIONS:-1536}
+      EMBEDDING_BATCH_SIZE: ${EMBEDDING_BATCH_SIZE:-64}
+      RAG_TOP_K: ${RAG_TOP_K:-6}
+      RAG_MIN_SCORE: ${RAG_MIN_SCORE:-0.05}
+      RAG_VECTOR_MIN_SCORE: ${RAG_VECTOR_MIN_SCORE:-0.30}
       AUTH_SECRET: ${AUTH_SECRET:?Set AUTH_SECRET in .env}
       RESEARCH_WEBHOOK_SECRET: ${RESEARCH_WEBHOOK_SECRET:?Set RESEARCH_WEBHOOK_SECRET in .env}
       ACTION_GATEWAY_MODE: ${ACTION_GATEWAY_MODE:-mock}

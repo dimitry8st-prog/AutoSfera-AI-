@@ -191,6 +191,16 @@ def create_app() -> FastAPI:
             "dealer_id": settings.dealer_id,
             "dealer_name": settings.dealer_name,
             "storage_backend": settings.storage_backend,
+            "rag": {
+                "backend": settings.rag_backend,
+                "top_k": settings.rag_top_k,
+                "min_score": (
+                    settings.rag_vector_min_score
+                    if settings.rag_backend == "pgvector"
+                    else settings.rag_min_score
+                ),
+                "embedding_model": settings.embedding_model if settings.rag_backend == "pgvector" else None,
+            },
             "orchestration": {
                 "engine": orch.orchestrator_mode,
                 "nodes": list(orch.graph_nodes) if orch.graph is not None else [],
@@ -207,7 +217,16 @@ def create_app() -> FastAPI:
         database = get_store().healthcheck()
         if not database["ok"]:
             raise HTTPException(status_code=503, detail={"status": "not_ready", "database": database})
-        return {"status": "ready", "database": database}
+        rag = {"ok": True, "backend": settings.rag_backend}
+        retriever = get_orchestrator().rag
+        if hasattr(retriever, "healthcheck"):
+            rag = retriever.healthcheck()
+        if not rag["ok"]:
+            raise HTTPException(
+                status_code=503,
+                detail={"status": "not_ready", "database": database, "rag": rag},
+            )
+        return {"status": "ready", "database": database, "rag": rag}
 
     @app.post("/api/auth/token")
     def login(body: LoginRequest) -> dict[str, Any]:

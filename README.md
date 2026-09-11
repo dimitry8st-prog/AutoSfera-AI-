@@ -42,7 +42,7 @@
 
 Учебный проект: автоматизация клиентских обращений вымышленной автомобильной компании **AutoSfera** с помощью AI Orchestrator, трёх специализированных агентов, Skills, Knowledge Base и RAG.
 
-Версия MVP: **1.1** · Стек: **Python 3.11+**, **FastAPI**, JSON KB, TF-IDF RAG, веб-чат  
+Версия MVP: **1.1** · Стек: **Python 3.11+**, **FastAPI**, JSON KB, TF-IDF/pgvector RAG, веб-чат
 Все цены, заказы и контакты — **тестовые (вымышленные)**.
 
 ---
@@ -92,7 +92,7 @@
 | 17 Skills (4 клиентских набора + `competitor_research`) | ✅ |
 | System Prompts (`prompts/`) | ✅ |
 | Knowledge Base (JSON, в т.ч. internal) | ✅ |
-| RAG (TF-IDF, без внешней vector DB) | ✅ |
+| RAG: TF-IDF fallback + опциональный pgvector/HNSW | ✅ |
 | SQLite: диалоги и заявки по `dealer_id` | ✅ |
 | API заявок и аналитики | ✅ |
 | Веб-чат, quick replies, просмотр KB | ✅ |
@@ -104,7 +104,7 @@
 | Защищённый Job API n8n/Langflow + human approval | ✅ |
 | Action Gateway: lead / test drive / service → approve → execute → audit | ✅ (demo CRM), готов адаптер n8n |
 | Action Gateway observability without customer payloads in logs | ✅ |
-| Live CRM/DMS и vector DB | ❌ вне демо-пилота |
+| Live CRM/DMS и подтверждённый production-запуск pgvector | ❌ вне демо-пилота |
 
 Соответствие пилоту: оркестратор, 4 агента, 17 Skills, KB, RAG, заявки, аналитика, роли, изоляция `dealer_id`, эскалации и Least Privilege.
 
@@ -411,11 +411,16 @@ Content-Type: application/json
 
 ### RAG
 
-Реализация: `src/autonova/rag/` — TF-IDF + cosine similarity по токенам (учебная эмуляция retrieval без Pinecone/Weaviate/pgvector).
+Реализация: `src/autonova/rag/` поддерживает два явно выбираемых backend:
+
+- `RAG_BACKEND=tfidf` — безопасный локальный режим без внешних ключей;
+- `RAG_BACKEND=pgvector` — PostgreSQL + pgvector, эмбеддинги, HNSW и cosine similarity.
 
 - `rag_top_k` по умолчанию: **6**
 - в ответы skills попадают в основном фактовые разделы (не «шум» scripts/policies)
 - при отсутствии данных пользователь уведомляется, возможна эскалация
+
+Векторный индекс разделён по `dealer_id`, разделам базы и целевому агенту. Он не перестраивается скрыто при запуске приложения: миграция и команда индексации выполняются явно. Инструкция: [`docs/RAG_2_PGVECTOR.md`](docs/RAG_2_PGVECTOR.md).
 
 ---
 
@@ -514,7 +519,7 @@ AutoSfera AI/
 
 ## Ограничения
 
-1. RAG — учебный TF-IDF, не production vector DB.
+1. По умолчанию включён учебный TF-IDF; pgvector/HNSW реализован, но требует явной индексации и проверки на пилотном датасете.
 2. Telegram / WhatsApp / Email / CRM — HTTP-заготовки без реальных Bot API и CRM-учётных данных.
 3. Демонстрационный вход не заменяет корпоративный Identity Provider; пароли и секреты из `.env.example` необходимо заменить.
 4. Все коммерческие и клиентские данные вымышлены.

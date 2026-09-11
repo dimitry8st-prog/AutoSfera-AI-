@@ -11,7 +11,7 @@ from autonova.agents import AGENT_META, AgentReply, BaseAgent, build_agents, loa
 from autonova.knowledge import KnowledgeBase
 from autonova.llm import LLMClient, extract_json_object, get_llm_client
 from autonova.logging import DialogueLogger, get_logger, setup_logging
-from autonova.rag import RAGRetriever
+from autonova.rag import RAGRetriever, build_retriever
 from autonova.skills import SkillRouter, build_skill_registry
 from autonova.config import get_settings
 
@@ -158,11 +158,11 @@ class AIOrchestrator:
     ) -> None:
         setup_logging()
         self.kb = knowledge_base or KnowledgeBase()
-        self.rag = rag or RAGRetriever(self.kb)
+        self.dealer_id = dealer_id or get_settings().dealer_id
+        self.rag = rag or build_retriever(self.kb, self.dealer_id)
         self.skills = skills or SkillRouter(build_skill_registry())
         self.llm = llm or get_llm_client()
         self.store = store
-        self.dealer_id = dealer_id or get_settings().dealer_id
         self.agents: dict[str, BaseAgent] = build_agents(self.rag, self.skills)
         self.system_prompt = load_prompt("orchestrator.txt")
         self.sessions: dict[str, SessionState] = {}

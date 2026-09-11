@@ -78,3 +78,19 @@ def test_postgres_store_contract_and_dealer_isolation() -> None:
             cur.execute("DELETE FROM action_jobs WHERE dealer_id IN (%s, %s)", (dealer_id, other_dealer_id))
             cur.execute("DELETE FROM sessions WHERE dealer_id IN (%s, %s)", (dealer_id, other_dealer_id))
             cur.execute("DELETE FROM requests WHERE dealer_id IN (%s, %s)", (dealer_id, other_dealer_id))
+
+
+def test_pgvector_schema_and_hnsw_index_exist() -> None:
+    assert DATABASE_URL is not None
+    store = PostgresPlatformStore(DATABASE_URL)
+    with store.connect() as db, db.cursor() as cur:
+        cur.execute("SELECT extname FROM pg_extension WHERE extname = 'vector'")
+        assert cur.fetchone()["extname"] == "vector"
+        cur.execute(
+            "SELECT indexdef FROM pg_indexes "
+            "WHERE tablename = 'knowledge_chunks' AND indexname = 'ix_knowledge_chunks_embedding_hnsw'"
+        )
+        index = cur.fetchone()
+        assert index is not None
+        assert "USING hnsw" in index["indexdef"]
+        assert "vector_cosine_ops" in index["indexdef"]
