@@ -402,7 +402,13 @@ def create_app() -> FastAPI:
         limit: int = 100,
         actor: Actor = Depends(require_roles("admin", "sales", "service", "employee")),
     ) -> dict[str, Any]:
-        return {"items": get_store().list_action_jobs(actor.dealer_id, max(1, min(limit, 500)))}
+        store = get_store()
+        jobs = store.list_action_jobs(actor.dealer_id, max(1, min(limit, 500)))
+        items = []
+        for job in jobs:
+            events = store.list_action_events(actor.dealer_id, job["id"])
+            items.append({**job, "recent_events": events[-5:]})
+        return {"items": items}
 
     @app.get("/api/actions/{action_id}")
     def get_action(

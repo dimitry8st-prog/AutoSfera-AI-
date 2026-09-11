@@ -10,7 +10,7 @@ from autonova.llm import MockLLMClient, extract_json_object
 from autonova.logging import DialogueLogger, setup_logging
 from autonova.orchestrator import AIOrchestrator
 from autonova.rag import RAGRetriever
-from autonova.skills import SkillRouter, build_skill_registry
+from autonova.skills import SkillRouter, build_skill_registry, _extract_budget
 from autonova.storage import PlatformStore
 
 
@@ -135,6 +135,82 @@ def test_vehicle_selection_filters_sedan_and_budget(orchestrator: AIOrchestrator
     assert "1 800 000" in second.reply
     assert "Nova Drive" not in second.reply
     assert "Уточните бюджет, тип кузова" not in second.reply
+
+
+def test_vehicle_selection_tiny_usd_budget_does_not_dump_faq(orchestrator: AIOrchestrator):
+    first = orchestrator.handle_message("Хочу купить кроссовер")
+    assert "Какой кроссовер есть в наличии" not in first.reply
+    assert "В:" not in first.reply
+
+    second = orchestrator.handle_message(
+        "Что есть за 100 долларов",
+        session_id=first.session_id,
+    )
+    assert second.skill == "vehicle_selection"
+    assert second.collected_fields.get("budget") == 9000
+    assert "Какой кроссовер есть в наличии" not in second.reply
+    assert "В:" not in second.reply
+    assert "нет автомобиля" in second.reply
+    assert "2 400 000" in second.reply
+    assert "По запросу" not in second.reply
+
+    third = orchestrator.handle_message("500", session_id=first.session_id)
+    assert third.skill == "vehicle_selection"
+    assert third.collected_fields.get("budget") == 500
+    assert "Какой кроссовер есть в наличии" not in third.reply
+    assert "В:" not in third.reply
+    assert "нет автомобиля" in third.reply
+    assert "Уточните бюджет, тип кузова" not in third.reply
+
+
+def test_extract_budget_parses_usd_and_bare_follow_up():
+    assert _extract_budget("Что есть за 100 долларов") == 9000
+    assert _extract_budget("Хочу купить кроссовер\nЧто есть за 100 долларов\n500") == 500
+    assert _extract_budget("Побери мне машину за 500 баксов") == 45_000
+    assert _extract_budget("нужен седан за 2 млн рублей") == 2_000_000
+    assert (
+        _extract_budget(
+            "Хочу купить кроссовер\nЧто есть за 100 долларов\n"
+            "Уточнение пользователя: 500"
+        )
+        == 500
+    )
+
+
+def test_vehicle_selection_uses_catalog_when_rag_misses(orchestrator: AIOrchestrator):
+    result = orchestrator.handle_message("Побери мне машину за 500 баксов")
+    assert result.skill == "vehicle_selection"
+    assert result.escalated is False
+    assert "Какой кроссовер есть в наличии" not in result.reply
+    assert "нет автомобиля" in result.reply
+    assert "950 000" in result.reply or "Nova Classic" in result.reply
+
+
+def test_credit_follow_up_keeps_leasing_product(orchestrator: AIOrchestrator):
+    first = orchestrator.handle_message("Лизинг для юридических лиц на 5 авто")
+    second = orchestrator.handle_message(
+        "Какой аванс?",
+        session_id=first.session_id,
+    )
+    assert first.agent == "SALES_AGENT"
+    assert second.skill == "credit_leasing"
+    assert "8,5%" in second.reply or "лизинг" in second.reply.lower()
+    assert "9,9%" not in second.reply
+
+
+def test_trade_in_follow_up_collects_missing_fields(orchestrator: AIOrchestrator):
+    first = orchestrator.handle_message("Хочу сдать авто в Trade-in")
+    second = orchestrator.handle_message(
+        "Nova Comfort 2022, пробег 45000 км",
+        session_id=first.session_id,
+    )
+    assert first.skill == "trade_in"
+    assert "не хватает" in first.reply
+    assert second.skill == "trade_in"
+    assert "Nova Comfort" in second.reply
+    assert "2022" in second.reply
+    assert "45000" in second.reply
+    assert "не хватает" not in second.reply
 
 
 @pytest.mark.parametrize(

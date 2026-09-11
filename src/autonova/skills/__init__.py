@@ -66,7 +66,7 @@ _ANSWER_SECTIONS = frozenset(
 )
 
 _SKILL_SECTIONS: dict[str, tuple[str, ...]] = {
-    "vehicle_selection": ("sales", "faq"),
+    "vehicle_selection": ("sales",),
     "trade_in": ("sales",),
     "credit_leasing": ("finance", "faq"),
     "test_drive_booking": ("sales",),
@@ -175,9 +175,24 @@ _BODY_ALIASES: tuple[tuple[str, str], ...] = (
 )
 
 
-def _catalog_blob(chunks: list[RetrievedChunk]) -> str:
+DEMO_USD_TO_RUB = 90
+DEMO_EUR_TO_RUB = 100
+
+
+def _catalog_blob(chunks: list[RetrievedChunk], ctx: dict[str, Any] | None = None) -> str:
     preferred = [c.document.content for c in chunks if c.document.id == "sales-models"]
-    return "\n".join(preferred or [c.document.content for c in chunks])
+    if preferred:
+        return "\n".join(preferred)
+    kb = (ctx or {}).get("kb")
+    if kb is not None:
+        doc = kb.get("sales-models")
+        if doc is not None:
+            return doc.content
+    parsed: list[str] = []
+    for chunk in chunks:
+        if _CATALOG_MODEL_RE.search(chunk.document.content or ""):
+            parsed.append(chunk.document.content)
+    return "\n".join(parsed)
 
 
 def _parse_catalog_models(text: str) -> list[dict[str, Any]]:
@@ -205,22 +220,66 @@ def _user_constraint_text(message: str, ctx: dict[str, Any]) -> str:
     return "\n".join([*prior, message]).strip()
 
 
+def _amount_to_rub(value: str, unit: str) -> int:
+    amount = float(value.replace(",", ".").replace(" ", ""))
+    unit = unit.lower()
+    if unit in {"млн", "миллион", "миллиона", "миллионов"}:
+        return int(amount * 1_000_000)
+    if unit in {"тыс", "тысяч", "тысячи"}:
+        return int(amount * 1_000)
+    if unit in {"$", "usd", "доллар", "доллара", "долларов", "бакс", "бакса", "баксов"}:
+        return int(amount * DEMO_USD_TO_RUB)
+    if unit in {"€", "eur", "евро"}:
+        return int(amount * DEMO_EUR_TO_RUB)
+    return int(amount)
+
+
+def _last_user_utterance(text: str) -> str:
+    stripped = text.strip()
+    match = re.search(
+        r"уточнение пользователя:\s*(.+)\Z",
+        stripped,
+        flags=re.IGNORECASE | re.DOTALL,
+    )
+    if match:
+        return match.group(1).strip()
+    lines = [line.strip() for line in stripped.splitlines() if line.strip()]
+    return lines[-1] if lines else ""
+
+
 def _extract_budget(text: str) -> int | None:
     lowered = text.lower().replace("ё", "е")
-    million = list(
-        re.finditer(r"(\d+(?:[.,]\d+)?)\s*(млн|миллион)", lowered)
+    candidates: list[tuple[int, int]] = []
+    patterns = (
+        r"(\d+(?:[.,]\d+)?)\s*(млн|миллион(?:а|ов)?)",
+        r"(\d+(?:[.,]\d+)?)\s*(тыс|тысяч[аи]?)",
+        r"(\d[\d\s]{2,})\s*(руб(?:\.|лей)?)",
+        r"(\d+(?:[.,]\d+)?)\s*(\$|usd|долларов|доллара|доллар|баксов|бакса|бакс)",
+        r"\$\s*(\d+(?:[.,]\d+)?)",
+        r"(\d+(?:[.,]\d+)?)\s*(€|eur|евро)",
+        r"(?:за|до|бюджет)\s+(\d{2,7})(?!\s*(?:млн|тыс|руб|\$|usd|доллар|евро|€|бакс))",
     )
-    if million:
-        value = million[-1].group(1).replace(",", ".")
-        return int(float(value) * 1_000_000)
-    thousand = list(re.finditer(r"(\d+(?:[.,]\d+)?)\s*(тыс|тысяч)", lowered))
-    if thousand:
-        value = thousand[-1].group(1).replace(",", ".")
-        return int(float(value) * 1_000)
-    rubles = list(re.finditer(r"(\d[\d\s]{4,})\s*руб", lowered))
-    if rubles:
-        return int(re.sub(r"\s+", "", rubles[-1].group(1)))
-    return None
+    for pattern in patterns:
+        for match in re.finditer(pattern, lowered):
+            groups = [g for g in match.groups() if g]
+            if pattern.startswith(r"\$"):
+                rub = _amount_to_rub(groups[0], "$")
+            elif len(groups) == 1:
+                rub = int(re.sub(r"\s+", "", groups[0]))
+            else:
+                number, unit = groups[0], groups[1]
+                if unit in {"за", "до"}:
+                    continue
+                rub = _amount_to_rub(number, unit)
+            candidates.append((match.start(), rub))
+    last_line = _last_user_utterance(text)
+    bare = re.fullmatch(r"(\d{2,7})", last_line.replace(" ", ""))
+    if bare and not re.fullmatch(r"(?:19|20)\d{2}", bare.group(1)):
+        candidates.append((len(text), int(bare.group(1))))
+    if not candidates:
+        return None
+    candidates.sort(key=lambda item: item[0])
+    return candidates[-1][1]
 
 
 def _extract_body_type(text: str) -> str | None:
@@ -257,28 +316,40 @@ def _format_price(value: int) -> str:
 # --- Sales skills ---
 
 def vehicle_selection(message: str, chunks: list[RetrievedChunk], ctx: dict[str, Any]) -> SkillResult:
-    text, ids, missing = _context_or_missing(
-        chunks,
-        "vehicle_selection",
-        limit=2,
-        prefer_ids=("sales-models",),
-    )
-    if missing:
+    catalog_text = _catalog_blob(chunks, ctx)
+    models = _parse_catalog_models(catalog_text)
+    ids = [c.document.id for c in chunks if c.document.id == "sales-models"]
+    if not ids and models:
+        ids = ["sales-models"]
+    if not models:
+        text, ids, missing = _context_or_missing(
+            chunks,
+            "vehicle_selection",
+            limit=2,
+            prefer_ids=("sales-models",),
+        )
+        if missing:
+            return SkillResult(
+                "vehicle_selection",
+                text,
+                escalated=True,
+                escalation_target="sales_manager",
+                escalation_reason="нет данных в KB",
+                rag_ids=ids,
+            )
         return SkillResult(
             "vehicle_selection",
-            text,
-            escalated=True,
-            escalation_target="sales_manager",
-            escalation_reason="нет данных в KB",
+            "Не удалось разобрать модельный ряд из каталога. Уточните запрос "
+            "или передам заявку менеджеру.",
             rag_ids=ids,
         )
+
     combined = _user_constraint_text(message, ctx)
-    models = _parse_catalog_models(_catalog_blob(chunks) or text)
     body = _extract_body_type(combined)
     budget = _extract_budget(combined)
-    matches = [m for m in models if _model_matches(m, body, budget)] if models else []
+    matches = [m for m in models if _model_matches(m, body, budget)]
 
-    if models and (body or budget):
+    if body or budget is not None:
         if matches:
             lines = "\n".join(f"• {item['line']}." for item in matches)
             constraints: list[str] = []
@@ -300,12 +371,16 @@ def vehicle_selection(message: str, chunks: list[RetrievedChunk], ctx: dict[str,
                 f"{next_step} Могу записать на тест-драйв или передать заявку менеджеру."
             )
         else:
-            catalog = "\n".join(f"• {item['line']}." for item in models)
+            body_models = [m for m in models if _model_matches(m, body, None)] if body else models
+            floor = min(body_models or models, key=lambda item: int(item["price"]))
+            budget_part = (
+                f" до {_format_price(budget)} ₽" if budget is not None else ""
+            )
+            body_part = f" ({body})" if body else ""
             reply = (
-                "В каталоге нет модели, которая одновременно подходит под указанные "
-                "условия. Актуальный ряд AutoSfera:\n\n"
-                f"{catalog}\n\n"
-                "Можем сдвинуть бюджет или выбрать другой тип кузова — подскажу по базе."
+                f"В демо-каталоге AutoSfera нет автомобиля{body_part}{budget_part}. "
+                f"Минимальная цена в этой категории — {floor['line']}.\n\n"
+                "Цены указаны в рублях. Могу подобрать в другом бюджете или передать заявку менеджеру."
             )
         return SkillResult(
             "vehicle_selection",
@@ -318,12 +393,26 @@ def vehicle_selection(message: str, chunks: list[RetrievedChunk], ctx: dict[str,
             },
         )
 
+    lines = "\n".join(f"• {item['line']}." for item in models)
     reply = (
-        "Помогу подобрать автомобиль. Вот данные из каталога автосалона:\n\n"
-        f"{text}\n\n"
+        "Помогу подобрать автомобиль. Актуальный демо-каталог AutoSfera:\n\n"
+        f"{lines}\n\n"
         "Уточните бюджет, тип кузова и предпочтения по комплектации."
     )
     return SkillResult("vehicle_selection", reply, rag_ids=ids)
+
+
+def _extract_year(text: str) -> str | None:
+    match = re.search(r"\b((?:19|20)\d{2})\b", text)
+    return match.group(1) if match else None
+
+
+def _extract_mileage(text: str) -> str | None:
+    match = re.search(
+        r"(\d[\d\s]{1,7})\s*(?:тыс\.?\s*км|км)",
+        text.lower().replace("ё", "е"),
+    )
+    return re.sub(r"\s+", "", match.group(1)) if match else None
 
 
 def trade_in(message: str, chunks: list[RetrievedChunk], ctx: dict[str, Any]) -> SkillResult:
@@ -337,16 +426,42 @@ def trade_in(message: str, chunks: list[RetrievedChunk], ctx: dict[str, Any]) ->
             escalation_reason="нет данных Trade-in",
             rag_ids=ids,
         )
-    reply = (
-        f"{text}\n\n"
-        "Для предварительной оценки укажите марку, модель, год, пробег и состояние. "
-        "Итоговую сумму зафиксирует менеджер после осмотра."
-    )
-    return SkillResult("trade_in", reply, rag_ids=ids)
+    combined = _user_constraint_text(message, ctx)
+    vehicle = _extract_vehicle(combined)
+    year = _extract_year(combined)
+    mileage = _extract_mileage(combined)
+    fields = {
+        key: value
+        for key, value in {"vehicle": vehicle, "year": year, "mileage": mileage}.items()
+        if value
+    }
+    missing_bits = [
+        label
+        for label, value in (
+            ("марку/модель", vehicle),
+            ("год", year),
+            ("пробег", mileage),
+        )
+        if not value
+    ]
+    if missing_bits:
+        reply = (
+            f"{text}\n\n"
+            f"Для предварительной оценки не хватает: {', '.join(missing_bits)}. "
+            "Итоговую сумму зафиксирует менеджер после осмотра."
+        )
+    else:
+        reply = (
+            f"{text}\n\n"
+            f"Принял данные для оценки: {vehicle}, {year} г., пробег {mileage}. "
+            "Итоговую сумму зафиксирует менеджер после осмотра. Могу передать заявку."
+        )
+    return SkillResult("trade_in", reply, rag_ids=ids, collected_fields=fields)
 
 
 def credit_leasing(message: str, chunks: list[RetrievedChunk], ctx: dict[str, Any]) -> SkillResult:
-    lowered = message.lower()
+    combined = _user_constraint_text(message, ctx)
+    lowered = combined.lower()
     prefer_ids: list[str] = []
     if "лизинг" in lowered:
         prefer_ids.extend(["finance-leasing"])
@@ -369,13 +484,23 @@ def credit_leasing(message: str, chunks: list[RetrievedChunk], ctx: dict[str, An
             escalation_reason="нет финансовых данных",
             rag_ids=ids,
         )
+    vehicle = _extract_vehicle(combined)
+    current = message.lower()
+    if any(k in current for k in ("кредит", "рассроч")):
+        product = "кредит"
+    elif "лизинг" in current or "лизинг" in lowered:
+        product = "лизинг"
+    elif any(k in lowered for k in ("кредит", "рассроч")):
+        product = "кредит"
+    else:
+        product = "финансирование"
+    hint = f" для {vehicle}" if vehicle else ""
     reply = (
         f"{text}\n\n"
-        "Я не принимаю финансовых решений и не одобряю сделки — "
+        f"Это демо-условия {product}{hint}. Я не принимаю финансовых решений и не одобряю сделки — "
         "для договора подключу специалиста."
     )
-    lowered = message.lower()
-    escalate = any(w in lowered for w in ("договор", "одобри", "подпиши", "оформи кредит"))
+    escalate = any(w in message.lower() for w in ("договор", "одобри", "подпиши", "оформи кредит"))
     return SkillResult(
         "credit_leasing",
         reply if not escalate else reply + "\nПередаю обращение кредитному/лизинговому специалисту.",
@@ -383,13 +508,15 @@ def credit_leasing(message: str, chunks: list[RetrievedChunk], ctx: dict[str, An
         escalation_target="finance_specialist" if escalate else None,
         escalation_reason="запрос финансового решения" if escalate else None,
         rag_ids=ids,
+        collected_fields={"vehicle": vehicle, "product": product} if vehicle or product else {},
     )
 
 
 def test_drive_booking(message: str, chunks: list[RetrievedChunk], ctx: dict[str, Any]) -> SkillResult:
     text, ids, _ = _context_or_missing(chunks, "test_drive_booking")
-    phone = _extract_phone(message)
-    vehicle = _extract_vehicle(message)
+    combined = _user_constraint_text(message, ctx)
+    phone = _extract_phone(combined)
+    vehicle = _extract_vehicle(combined)
     fields = {key: value for key, value in {"phone": phone, "vehicle": vehicle}.items() if value}
     if phone and vehicle:
         reply = (
@@ -527,12 +654,15 @@ def warranty_consultation(message: str, chunks: list[RetrievedChunk], ctx: dict[
 
 def service_booking(message: str, chunks: list[RetrievedChunk], ctx: dict[str, Any]) -> SkillResult:
     text, ids, _ = _context_or_missing(chunks, "service_booking", limit=1)
-    phone = _extract_phone(message)
-    fields = {"phone": phone} if phone else {}
+    combined = _user_constraint_text(message, ctx)
+    phone = _extract_phone(combined)
+    vehicle = _extract_vehicle(combined)
+    fields = {key: value for key, value in {"phone": phone, "vehicle": vehicle}.items() if value}
     if phone:
+        car = f", автомобиль {vehicle}" if vehicle else ""
         reply = (
             f"{text}\n\n"
-            f"Предварительная заявка на сервис принята (телефон: {phone}). "
+            f"Предварительная заявка на сервис принята (телефон: {phone}{car}). "
             "Слот подтвердит сотрудник сервиса."
         )
         return SkillResult(
@@ -544,7 +674,11 @@ def service_booking(message: str, chunks: list[RetrievedChunk], ctx: dict[str, A
             collected_fields=fields,
             rag_ids=ids,
         )
-    reply = f"{text}\n\nУкажите модель, телефон, дату и описание проблемы."
+    missing_bits = [label for label, value in (("модель", vehicle), ("телефон", phone)) if not value]
+    reply = (
+        f"{text}\n\n"
+        f"Для записи укажите {', '.join(missing_bits) if missing_bits else 'дату и описание проблемы'}."
+    )
     return SkillResult("service_booking", reply, collected_fields=fields, rag_ids=ids)
 
 
@@ -626,7 +760,7 @@ def build_skill_registry() -> dict[str, Skill]:
             "Vehicle Selection",
             "SALES_AGENT",
             "Подбор автомобиля и комплектации",
-            ("купить", "подобрать", "кроссовер", "седан", "фургон", "модель", "комплектац", "nova", "бюджет", "млн"),
+            ("купить", "подобрать", "побер", "кроссовер", "седан", "фургон", "машин", "модель", "комплектац", "бюджет", "млн", "доллар", "бакс"),
             vehicle_selection,
         ),
         Skill(
@@ -756,19 +890,27 @@ class SkillRouter:
     def skills_for_agent(self, agent_key: str) -> list[Skill]:
         return [s for s in self.registry.values() if s.agent == agent_key]
 
-    def select(self, agent_key: str, message: str) -> Skill:
+    def select(self, agent_key: str, message: str, ctx: dict[str, Any] | None = None) -> Skill:
         candidates = self.skills_for_agent(agent_key)
-        ranked = sorted(candidates, key=lambda s: s.match_score(message), reverse=True)
-        best = ranked[0]
-        if best.match_score(message) == 0:
-            # defaults per agent
-            defaults = {
-                "SALES_AGENT": "vehicle_selection",
-                "SUPPORT_AGENT": "customer_faq",
-                "SERVICE_AGENT": "maintenance_consultation",
-                "EMPLOYEE_AGENT": "internal_knowledge",
-            }
-            return self.registry[defaults[agent_key]]
+        current_ranked = sorted(
+            candidates, key=lambda s: s.match_score(message), reverse=True
+        )
+        if current_ranked[0].match_score(message) > 0:
+            best = current_ranked[0]
+        else:
+            scored_on = _user_constraint_text(message, ctx or {})
+            history_ranked = sorted(
+                candidates, key=lambda s: s.match_score(scored_on), reverse=True
+            )
+            best = history_ranked[0]
+            if best.match_score(scored_on) == 0:
+                defaults = {
+                    "SALES_AGENT": "vehicle_selection",
+                    "SUPPORT_AGENT": "customer_faq",
+                    "SERVICE_AGENT": "maintenance_consultation",
+                    "EMPLOYEE_AGENT": "internal_knowledge",
+                }
+                return self.registry[defaults[agent_key]]
         logger.debug("Selected skill %s for agent %s", best.id, agent_key)
         return best
 
@@ -779,7 +921,7 @@ class SkillRouter:
         chunks: list[RetrievedChunk],
         ctx: dict[str, Any] | None = None,
     ) -> SkillResult:
-        skill = self.select(agent_key, message)
+        skill = self.select(agent_key, message, ctx)
         result = skill.handler(message, chunks, ctx or {})
         logger.info(
             "Skill executed id=%s agent=%s escalated=%s",

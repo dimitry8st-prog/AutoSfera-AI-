@@ -85,7 +85,7 @@ class BaseAgent:
             self.key,
             message,
             chunks,
-            ctx={"history": history},
+            ctx={"history": history, "kb": self.rag.kb},
         )
         preface = (
             f"Здравствуйте! Я {self.label} — ИИ-ассистент AutoSfera AI.\n\n"
