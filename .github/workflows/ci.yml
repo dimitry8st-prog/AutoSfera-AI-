@@ -36,6 +36,7 @@ jobs:
         run: |
           sh -n scripts/setup_n8n_sandbox.sh
           python -m py_compile scripts/smoke_action_gateway_n8n.py
+          python scripts/evaluate_rag.py --output-dir /tmp/autosfera-rag-eval
       - name: Validate sandbox Compose
         env:
           POSTGRES_PASSWORD: ci-postgres-password
