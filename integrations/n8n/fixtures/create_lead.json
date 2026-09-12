@@ -1,0 +1,21 @@
+{
+  "request_id": "11111111-1111-4111-8111-111111111111",
+  "action_id": "11111111-1111-4111-8111-111111111111",
+  "trace_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+  "dealer_id": "main-salon",
+  "actor": {"subject": "sales"},
+  "action_type": "create_lead",
+  "kind": "lead",
+  "idempotency_key": "fixture:create_lead",
+  "issued_at": 1757692800,
+  "nonce": "fixture-nonce-lead-01",
+  "approval": {"required": true, "decision": "approve", "actor": "sales"},
+  "payload": {
+    "customer_name": "Дмитрий",
+    "phone": "+79990000000",
+    "vehicle": "Nova Drive",
+    "preferred_at": null,
+    "comment": "fixture lead"
+  },
+  "callback_url": "http://api:8000/api/actions/callback"
+}

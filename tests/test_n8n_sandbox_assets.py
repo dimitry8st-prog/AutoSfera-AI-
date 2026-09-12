@@ -8,24 +8,72 @@ from autonova.config import Settings
 
 
 ROOT = Path(__file__).resolve().parents[1]
+N8N_DIR = ROOT / "integrations" / "n8n"
+WORKFLOWS = {
+    "WF-00": N8N_DIR / "workflows" / "AUTOSFERA_WF-00_ACTION_GATEWAY.json",
+    "WF-10": N8N_DIR / "workflows" / "AUTOSFERA_WF-10_SALES_LEAD.json",
+    "WF-11": N8N_DIR / "workflows" / "AUTOSFERA_WF-11_TEST_DRIVE.json",
+    "WF-20": N8N_DIR / "workflows" / "AUTOSFERA_WF-20_SERVICE_BOOKING.json",
+}
 
 
-def test_sandbox_workflow_is_safe_and_importable() -> None:
-    workflow = json.loads(
-        (ROOT / "integrations/n8n/action-gateway.workflow.json").read_text(encoding="utf-8")
-    )
-    assert workflow["id"] == "autosfera-action-gateway-sandbox"
-    assert workflow["active"] is False
-    assert [node["name"] for node in workflow["nodes"]] == [
+def _load(path: Path) -> dict:
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def test_sandbox_catalog_is_safe_and_importable() -> None:
+    manifest = _load(N8N_DIR / "manifest.json")
+    assert manifest["webhook_path"] == "autosfera-actions"
+    assert [item["code"] for item in manifest["workflows"]] == ["WF-00", "WF-10", "WF-11", "WF-20"]
+
+    gateway = _load(WORKFLOWS["WF-00"])
+    assert gateway["id"] == "autosfera-wf-00-action-gateway"
+    assert gateway["active"] is False
+    assert [node["name"] for node in gateway["nodes"]] == [
         "Signed Action Webhook",
         "Verify and Validate",
+        "Dispatch Demo CRM",
         "Prepare Signed Callback",
         "Return Result",
     ]
-    serialized = json.dumps(workflow)
+    webhook = gateway["nodes"][0]
+    assert webhook["parameters"]["path"] == "autosfera-actions"
+    assert webhook["parameters"]["options"]["rawBody"] is True
+    serialized = json.dumps(gateway)
     assert "$env.ACTION_WEBHOOK_SECRET" in serialized
     assert "replace-action-webhook-secret" not in serialized
     assert "n8n-sandbox" in serialized
+    assert "create_lead" in serialized and "create_test_drive" in serialized
+    assert "create_service" in serialized
+
+    children = {
+        "WF-10": ("autosfera-wf-10-sales-lead", "create_lead"),
+        "WF-11": ("autosfera-wf-11-test-drive", "create_test_drive"),
+        "WF-20": ("autosfera-wf-20-service-booking", "create_service"),
+    }
+    for code, (workflow_id, action_type) in children.items():
+        workflow = _load(WORKFLOWS[code])
+        assert workflow["id"] == workflow_id
+        assert workflow["active"] is False
+        assert workflow["nodes"][0]["type"] == "n8n-nodes-base.executeWorkflowTrigger"
+        assert action_type in json.dumps(workflow)
+        assert "n8n-sandbox" in json.dumps(workflow)
+
+
+def test_action_request_fixtures_match_catalog() -> None:
+    expected = {
+        "create_lead": "lead",
+        "create_test_drive": "test_drive",
+        "create_service": "service",
+    }
+    for action_type, kind in expected.items():
+        fixture = _load(N8N_DIR / "fixtures" / f"{action_type}.json")
+        assert fixture["action_type"] == action_type
+        assert fixture["kind"] == kind
+        assert fixture["dealer_id"] == "main-salon"
+        assert len(fixture["nonce"]) >= 8
+        assert fixture["callback_url"].endswith("/api/actions/callback")
+        assert fixture["payload"]["phone"]
 
 
 def test_sandbox_compose_keeps_n8n_local_and_secrets_external() -> None:
@@ -36,10 +84,14 @@ def test_sandbox_compose_keeps_n8n_local_and_secrets_external() -> None:
     assert "ACTION_WEBHOOK_SECRET:?" in compose
     assert "N8N_ENCRYPTION_KEY:?" in compose
     assert "http://n8n:5678/webhook/autosfera-actions" in compose
+    assert "ACTION_CALLBACK_URL: http://api:8000/api/actions/callback" in compose
     assert "NODE_FUNCTION_ALLOW_BUILTIN: crypto" in compose
-    assert 'command: ["import:workflow", "--input=/workflows/action-gateway.workflow.json"]' in compose
     assert (
-        'command: ["publish:workflow", "--id=autosfera-action-gateway-sandbox"]'
+        'command: ["import:workflow", "--separate", "--input=/workflows/workflows"]'
+        in compose
+    )
+    assert (
+        'command: ["publish:workflow", "--id=autosfera-wf-00-action-gateway"]'
         in compose
     )
 
@@ -50,6 +102,7 @@ def test_sandbox_scripts_do_not_embed_customer_or_gateway_secrets() -> None:
     assert "secrets.token_hex" in setup
     assert ".env.n8n.local" in setup
     assert "compose run --rm n8n-publish" in setup
+    assert "Waiting for n8n webhook execution" in setup
     assert "ACTION_WEBHOOK_SECRET=" not in smoke
     assert "+79990000000" in smoke
     assert 'response.get("job", response)' in smoke

@@ -11,10 +11,75 @@ from psycopg.rows import dict_row
 
 from autonova.config import get_settings
 from autonova.embeddings import EmbeddingClient, get_embedding_client
-from autonova.knowledge import SECTION_ACCESS, Document, KnowledgeBase, tokenize
+from autonova.knowledge import SECTION_ACCESS, Document, KnowledgeBase, stem_token, tokenize
 from autonova.logging import get_logger
 
 logger = get_logger("autonova.rag")
+
+
+def _section_boost(query: str, section: str) -> float:
+    q = query.lower().replace("ё", "е")
+    base = {
+        "conversation": 1.2,
+        "sales": 1.18,
+        "service": 1.18,
+        "customer_support": 1.18,
+        "finance": 1.18,
+        "internal": 1.16,
+        "legal": 1.12,
+        "company": 1.06,
+        "faq": 0.72,
+        "scripts": 0.8,
+        "policies": 0.88,
+        "glossary": 0.85,
+    }
+    if any(token in q for token in ("скрипт", "разговора", "общаться", "общат", "аргумент")):
+        if section == "scripts":
+            return 1.38
+        if section in {"sales", "service", "customer_support"}:
+            return 0.92
+    if any(token in q for token in ("политик", "безопасн", "игнорир", "персональн", "152")):
+        if section in {"policies", "legal"}:
+            return 1.36
+    if any(token in q for token in ("контакт", "связать", "телефон", "адрес", "email")):
+        if section == "company":
+            return 1.32
+    if any(token in q for token in ("руководител", "эскалац")):
+        if section == "internal":
+            return 1.28
+    if any(token in q for token in ("кредит", "лизинг", "взнос", "ставк")):
+        if section == "finance":
+            return 1.3
+        if section == "faq":
+            return 0.6
+    if any(token in q for token in ("гарант", "коррози", "кузов")):
+        if section == "service":
+            return 1.3
+        if section == "faq":
+            return 0.62
+    if any(token in q for token in ("тест-драйв", "тест драйв", "пробная поездка")):
+        if section == "sales":
+            return 1.34
+    if any(token in q for token in ("лизинг",)):
+        if section == "finance":
+            return 1.34
+        if section == "company":
+            return 0.7
+    if any(token in q for token in ("обслуживан", "техобслуж", "плановое")):
+        if section == "service":
+            return 1.32
+    if "сервис" in q and any(token in q for token in ("запис", "недел")):
+        if section == "service":
+            return 1.32
+    if any(token in q for token in ("модел", "продаж")) and "скрипт" not in q:
+        if section == "sales":
+            return 1.28
+        if section == "company":
+            return 0.78
+    if any(token in q for token in ("юридическ", "юрлиц", "b2b", "корпоративн")):
+        if section in {"sales", "finance"}:
+            return 1.26
+    return base.get(section, 1.0)
 
 
 @dataclass(frozen=True)
@@ -83,29 +148,34 @@ class RAGRetriever:
         top_k = top_k if top_k is not None else settings.rag_top_k
         min_score = min_score if min_score is not None else settings.rag_min_score
 
-        query_vec = self._tfidf(tokenize(query))
+        base_query_tokens = tokenize(query, expand=False)
+        query_tokens = tokenize(query, expand=True)
+        query_vec = self._tfidf(query_tokens)
+        query_terms = list(dict.fromkeys(
+            stem_token(token) for token in base_query_tokens if len(stem_token(token)) > 2
+        ))
+        weak_terms = {"компан", "autosfera", "авто"}
         candidates = self.kb.for_agent(agent_key)
-        # Prefer factual sections over scripts/policies when scores are close.
-        section_boost = {
-            "conversation": 1.2,
-            "sales": 1.12,
-            "service": 1.12,
-            "customer_support": 1.12,
-            "finance": 1.12,
-            "faq": 1.08,
-            "company": 1.05,
-            "scripts": 0.85,
-            "policies": 0.9,
-            "glossary": 0.9,
-        }
         scored: list[RetrievedChunk] = []
         for doc in candidates:
-            doc_vec = self._tfidf(self._doc_tokens.get(doc.id, []))
-            score = self._cosine(query_vec, doc_vec) * section_boost.get(doc.section, 1.0)
+            doc_tokens = self._doc_tokens.get(doc.id, [])
+            doc_set = set(doc_tokens)
+            overlap = sum(1 for term in query_terms if term in doc_set and term not in weak_terms)
+            if query_terms and overlap == 0:
+                continue
+            doc_vec = self._tfidf(doc_tokens)
+            score = self._cosine(query_vec, doc_vec) * _section_boost(query, doc.section)
+            title_terms = set(tokenize(f"{doc.title} {' '.join(doc.tags)}", expand=True))
+            title_hits = len(title_terms.intersection(set(query_terms)))
+            if title_hits:
+                score += 0.12 * min(title_hits, 3)
             if score >= min_score:
                 scored.append(RetrievedChunk(document=doc, score=score))
 
         scored.sort(key=lambda c: c.score, reverse=True)
+        if scored and scored[0].score >= 0.2:
+            floor = max(min_score, scored[0].score * 0.28)
+            scored = [chunk for chunk in scored if chunk.score >= floor]
         results = scored[:top_k]
         logger.debug(
             "RAG retrieve agent=%s query=%r hits=%s",

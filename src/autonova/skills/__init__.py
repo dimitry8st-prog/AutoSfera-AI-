@@ -46,7 +46,7 @@ class Skill:
                 hits += 1
         if not self.keywords:
             return 0.0
-        return hits / len(self.keywords)
+        return hits
 
 
 # Sections useful for user-facing answers (scripts/policies stay in RAG index
@@ -62,6 +62,8 @@ _ANSWER_SECTIONS = frozenset(
         "faq",
         "legal",
         "internal",
+        "policies",
+        "scripts",
     }
 )
 
@@ -75,6 +77,9 @@ _SKILL_SECTIONS: dict[str, tuple[str, ...]] = {
     "warranty_consultation": ("service", "faq"),
     "service_booking": ("service",),
     "maintenance_consultation": ("service", "faq"),
+    "internal_knowledge": ("internal", "legal", "policies"),
+    "sales_coaching": ("scripts", "sales"),
+    "process_lookup": ("internal", "scripts"),
     "competitor_research": ("internal", "sales", "company"),
 }
 
@@ -166,10 +171,16 @@ def _lead_requested(text: str) -> bool:
         for phrase in (
             "оставить заявку",
             "оставлю заявку",
+            "оставьте заявку",
             "передать заявку",
             "передайте заявку",
+            "передай заявку",
             "передайте менеджеру",
+            "передай менеджеру",
+            "передать менеджеру",
+            "заявку менеджеру",
             "свяжите с менеджером",
+            "свяжи с менеджером",
             "пусть менеджер",
             "перезвоните",
             "позвоните мне",
@@ -209,12 +220,24 @@ DEMO_USD_TO_RUB = 90
 DEMO_EUR_TO_RUB = 100
 
 
+def _looks_like_vehicle_query(text: str) -> bool:
+    lowered = text.lower().replace("ё", "е")
+    return any(
+        token in lowered
+        for token in (
+            "купи", "подобр", "побер", "кроссовер", "седан", "фургон",
+            "машин", "модель", "комплектац", "бюджет", "каталог", "nova",
+        )
+    )
+
+
 def _catalog_blob(chunks: list[RetrievedChunk], ctx: dict[str, Any] | None = None) -> str:
     preferred = [c.document.content for c in chunks if c.document.id == "sales-models"]
     if preferred:
         return "\n".join(preferred)
     kb = (ctx or {}).get("kb")
-    if kb is not None:
+    message = str((ctx or {}).get("message") or "")
+    if kb is not None and _looks_like_vehicle_query(message):
         doc = kb.get("sales-models")
         if doc is not None:
             return doc.content
@@ -346,7 +369,7 @@ def _format_price(value: int) -> str:
 # --- Sales skills ---
 
 def vehicle_selection(message: str, chunks: list[RetrievedChunk], ctx: dict[str, Any]) -> SkillResult:
-    catalog_text = _catalog_blob(chunks, ctx)
+    catalog_text = _catalog_blob(chunks, {**(ctx or {}), "message": message})
     models = _parse_catalog_models(catalog_text)
     ids = [c.document.id for c in chunks if c.document.id == "sales-models"]
     if not ids and models:
@@ -367,6 +390,8 @@ def vehicle_selection(message: str, chunks: list[RetrievedChunk], ctx: dict[str,
                 escalation_reason="нет данных в KB",
                 rag_ids=ids,
             )
+        if not any(chunk.document.id == "sales-models" for chunk in chunks):
+            return SkillResult("vehicle_selection", text, rag_ids=ids)
         return SkillResult(
             "vehicle_selection",
             "Не удалось разобрать модельный ряд из каталога. Уточните запрос "
@@ -410,11 +435,17 @@ def vehicle_selection(message: str, chunks: list[RetrievedChunk], ctx: dict[str,
                 f" до {_format_price(budget)} ₽" if budget is not None else ""
             )
             body_part = f" ({body})" if body else ""
-            reply = (
-                f"В демо-каталоге AutoSfera нет автомобиля{body_part}{budget_part}. "
-                f"Минимальная цена в этой категории — {floor['line']}.\n\n"
-                "Цены указаны в рублях. Могу подобрать в другом бюджете или передать заявку менеджеру."
-            )
+            if wants_lead:
+                reply = (
+                    f"Точного совпадения в каталоге нет{body_part}{budget_part}. "
+                    f"Ближайший вариант — {floor['line']}. Оформлю заявку менеджеру."
+                )
+            else:
+                reply = (
+                    f"В демо-каталоге AutoSfera нет автомобиля{body_part}{budget_part}. "
+                    f"Минимальная цена в этой категории — {floor['line']}.\n\n"
+                    "Цены указаны в рублях. Могу подобрать в другом бюджете или передать заявку менеджеру."
+                )
         fields = {
             "body_type": body,
             "budget": budget,
@@ -714,7 +745,8 @@ def warranty_consultation(message: str, chunks: list[RetrievedChunk], ctx: dict[
     )
     reply = (
         f"{text}\n\n"
-        "Важно: я не подтверждаю гарантийный случай — это делает только инженер сервиса."
+        "Важно: я не подтверждаю гарантийный случай и не могу подтвердить его без осмотра — "
+        "это делает только инженер сервиса."
     )
     return SkillResult(
         "warranty_consultation",
@@ -842,7 +874,7 @@ def build_skill_registry() -> dict[str, Skill]:
             "Trade-In",
             "SALES_AGENT",
             "Оценка и обмен автомобиля",
-            ("trade-in", "трейд", "обмен", "сдать авто", "оценка"),
+            ("trade-in", "трейд-ин", "трейд", "обмен", "сдать", "оценка", "доплат", "обменя"),
             trade_in,
         ),
         Skill(
@@ -866,7 +898,7 @@ def build_skill_registry() -> dict[str, Skill]:
             "Order Status",
             "SUPPORT_AGENT",
             "Статус заказа",
-            ("статус", "заказ", "ан-2024", "где мой", "выдача"),
+            ("статус", "заказ", "ан-2024", "где мой", "где сейчас", "выдача", "машин"),
             order_status,
         ),
         Skill(
@@ -882,7 +914,7 @@ def build_skill_registry() -> dict[str, Skill]:
             "Customer FAQ",
             "SUPPORT_AGENT",
             "Типовые вопросы клиентов",
-            ("вопрос", "как", "что нужно", "faq", "возврат"),
+            ("вопрос", "что нужно", "faq", "возврат", "связаться", "контакт"),
             customer_faq,
         ),
         Skill(
@@ -898,7 +930,7 @@ def build_skill_registry() -> dict[str, Skill]:
             "Warranty Consultation",
             "SERVICE_AGENT",
             "Консультации по гарантии",
-            ("гарантия", "кузов", "лкп", "гарантий"),
+            ("гарантия", "гарант", "кузов", "лкп", "гарантий", "коррози"),
             warranty_consultation,
         ),
         Skill(
@@ -927,12 +959,12 @@ def build_skill_registry() -> dict[str, Skill]:
         ),
         Skill(
             "internal_knowledge", "Internal Knowledge", "EMPLOYEE_AGENT",
-            "Поиск внутренних инструкций", ("внутренн", "инструкц", "правило", "политик"),
+            "Поиск внутренних инструкций", ("внутренн", "инструкц", "правил", "политик", "персональн", "152", "игнорир"),
             internal_knowledge,
         ),
         Skill(
             "sales_coaching", "Sales Coaching", "EMPLOYEE_AGENT",
-            "Подсказки сотруднику по работе с клиентом", ("скрипт", "продаж", "клиент", "возражен"),
+            "Подсказки сотруднику по работе с клиентом", ("скрипт", "продаж", "возражен", "аргумент", "подскажи", "корпоративн", "общаться"),
             sales_coaching,
         ),
         Skill(

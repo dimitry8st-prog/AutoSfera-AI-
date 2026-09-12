@@ -72,6 +72,7 @@ class Settings(BaseSettings):
     )
     action_timeout_seconds: float = Field(default=10.0, validation_alias="ACTION_TIMEOUT_SECONDS")
     action_max_attempts: int = Field(default=3, validation_alias="ACTION_MAX_ATTEMPTS")
+    action_callback_url: str = Field(default="", validation_alias="ACTION_CALLBACK_URL")
 
     # LLM: mock by default for offline/tests; set LLM_MODE=openai to use API
     llm_mode: str = Field(default="mock", validation_alias="LLM_MODE")

@@ -209,6 +209,7 @@ def create_app() -> FastAPI:
                 "mode": settings.action_gateway_mode,
                 "approval_required": True,
                 "kinds": ["lead", "test_drive", "service"],
+                "action_types": ["create_lead", "create_test_drive", "create_service"],
             },
         }
 

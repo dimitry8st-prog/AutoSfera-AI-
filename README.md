@@ -242,6 +242,7 @@ cp .env.example .env
 | `RESEARCH_WEBHOOK_URL` | — | защищённый webhook n8n |
 | `ACTION_GATEWAY_MODE` | `mock` | `mock` для демо-CRM или `n8n` |
 | `ACTION_WEBHOOK_URL` | — | production webhook n8n для одобренных действий |
+| `ACTION_CALLBACK_URL` | sandbox default | URL callback API → n8n; в sandbox `http://api:8000/api/actions/callback` |
 | `ACTION_WEBHOOK_SECRET` | demo secret | отдельный HMAC-секрет Action Gateway |
 | `RESEARCH_WEBHOOK_SECRET` | demo-only | HMAC-подпись запросов и callback |
 

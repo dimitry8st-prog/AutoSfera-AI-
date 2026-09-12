@@ -1,0 +1,21 @@
+{
+  "request_id": "33333333-3333-4333-8333-333333333333",
+  "action_id": "33333333-3333-4333-8333-333333333333",
+  "trace_id": "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+  "dealer_id": "main-salon",
+  "actor": {"subject": "service"},
+  "action_type": "create_service",
+  "kind": "service",
+  "idempotency_key": "fixture:create_service",
+  "issued_at": 1757692800,
+  "nonce": "fixture-nonce-service-01",
+  "approval": {"required": true, "decision": "approve", "actor": "service"},
+  "payload": {
+    "customer_name": "Игорь",
+    "phone": "+79990000000",
+    "vehicle": "Nova Drive",
+    "preferred_at": "2026-09-16T09:00:00+03:00",
+    "comment": "fixture service"
+  },
+  "callback_url": "http://api:8000/api/actions/callback"
+}

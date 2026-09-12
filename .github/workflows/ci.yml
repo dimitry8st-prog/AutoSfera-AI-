@@ -31,7 +31,16 @@ jobs:
           python -m json.tool contracts/research-callback.schema.json >/dev/null
           python -m json.tool contracts/action-job.schema.json >/dev/null
           python -m json.tool contracts/action-callback.schema.json >/dev/null
-          python -m json.tool integrations/n8n/action-gateway.workflow.json >/dev/null
+          python -m json.tool contracts/action-request.schema.json >/dev/null
+          python -m json.tool contracts/action-receipt.schema.json >/dev/null
+          python -m json.tool integrations/n8n/manifest.json >/dev/null
+          python -m json.tool integrations/n8n/workflows/AUTOSFERA_WF-00_ACTION_GATEWAY.json >/dev/null
+          python -m json.tool integrations/n8n/workflows/AUTOSFERA_WF-10_SALES_LEAD.json >/dev/null
+          python -m json.tool integrations/n8n/workflows/AUTOSFERA_WF-11_TEST_DRIVE.json >/dev/null
+          python -m json.tool integrations/n8n/workflows/AUTOSFERA_WF-20_SERVICE_BOOKING.json >/dev/null
+          python -m json.tool integrations/n8n/fixtures/create_lead.json >/dev/null
+          python -m json.tool integrations/n8n/fixtures/create_test_drive.json >/dev/null
+          python -m json.tool integrations/n8n/fixtures/create_service.json >/dev/null
       - name: Validate sandbox scripts
         run: |
           sh -n scripts/setup_n8n_sandbox.sh

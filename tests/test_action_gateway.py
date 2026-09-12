@@ -8,7 +8,11 @@ import httpx
 from fastapi.testclient import TestClient
 
 import autonova.api.main as api_main
-from autonova.action_gateway import execute_action
+from autonova.action_gateway import (
+    build_action_request,
+    execute_action,
+    validate_action_request,
+)
 from autonova.api.main import create_app
 from autonova.auth import sign_action_webhook
 from autonova.config import get_settings
@@ -219,6 +223,61 @@ def test_callback_rejects_wrong_trace(monkeypatch, tmp_path) -> None:
         headers={"Content-Type": "application/json", "X-AutoSfera-Signature": sign_action_webhook(raw)},
     )
     assert response.status_code == 409
+
+
+def test_action_request_rejects_stale_timestamp_and_unknown_type(tmp_path) -> None:
+    store = PlatformStore(tmp_path / "action-request.db")
+    action = _action(store)
+    request = build_action_request(action, now=1_700_000_000)
+    assert request["action_type"] == "create_test_drive"
+    assert request["kind"] == "test_drive"
+    assert request["callback_url"].endswith("/api/actions/callback")
+    assert validate_action_request(request, now=1_700_000_000) is None
+    assert validate_action_request(request, now=1_700_000_301) == "stale_or_invalid_timestamp"
+    bad_type = dict(request, action_type="delete_customer")
+    assert validate_action_request(bad_type, now=1_700_000_000) == "unsupported_action_type"
+    mismatch = dict(request, kind="service")
+    assert validate_action_request(mismatch, now=1_700_000_000) == "action_type_kind_mismatch"
+
+
+def test_n8n_dispatch_sends_action_request_v1(monkeypatch, tmp_path) -> None:
+    store = PlatformStore(tmp_path / "n8n-envelope.db")
+    action = _action(store)
+    store.review_action_job("main-salon", action["id"], "approve", "sales")
+    monkeypatch.setenv("ACTION_GATEWAY_MODE", "n8n")
+    monkeypatch.setenv("ACTION_WEBHOOK_URL", "https://n8n.example/webhook/autosfera-actions")
+    monkeypatch.setenv("ACTION_CALLBACK_URL", "http://api:8000/api/actions/callback")
+    get_settings.cache_clear()
+    captured: dict[str, object] = {}
+
+    class _Response:
+        status_code = 200
+
+        def raise_for_status(self) -> None:
+            return None
+
+    def fake_post(url, *, content, headers, timeout):
+        captured["url"] = url
+        captured["headers"] = headers
+        captured["body"] = json.loads(content)
+        return _Response()
+
+    monkeypatch.setattr("autonova.action_gateway.httpx.post", fake_post)
+    dispatched = execute_action(store, "main-salon", action["id"])
+    body = captured["body"]
+    assert dispatched["status"] == "running"
+    assert captured["url"] == "https://n8n.example/webhook/autosfera-actions"
+    assert body["action_type"] == "create_test_drive"
+    assert body["kind"] == "test_drive"
+    assert body["action_id"] == action["id"]
+    assert body["issued_at"]
+    assert len(body["nonce"]) >= 8
+    assert body["callback_url"] == "http://api:8000/api/actions/callback"
+    headers = captured["headers"]
+    assert headers["X-AutoSfera-Signature"]
+    assert headers["X-AutoSfera-Timestamp"] == str(body["issued_at"])
+    assert headers["X-AutoSfera-Nonce"] == body["nonce"]
+    get_settings.cache_clear()
 
 
 def test_n8n_failure_is_bounded_and_retryable(monkeypatch, tmp_path) -> None:

@@ -1,0 +1,54 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://autosfera.example/contracts/action-request.schema.json",
+  "title": "AutoSfera ActionRequest v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "request_id", "action_id", "trace_id", "dealer_id", "actor",
+    "action_type", "kind", "idempotency_key", "issued_at", "nonce",
+    "approval", "payload", "callback_url"
+  ],
+  "properties": {
+    "request_id": {"type": "string", "format": "uuid"},
+    "action_id": {"type": "string", "format": "uuid"},
+    "trace_id": {"type": "string", "minLength": 1},
+    "dealer_id": {"type": "string", "minLength": 1, "maxLength": 120},
+    "actor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["subject"],
+      "properties": {
+        "subject": {"type": "string", "minLength": 1, "maxLength": 120}
+      }
+    },
+    "action_type": {"enum": ["create_lead", "create_test_drive", "create_service"]},
+    "kind": {"enum": ["lead", "test_drive", "service"]},
+    "idempotency_key": {"type": "string", "minLength": 8, "maxLength": 200},
+    "issued_at": {"type": "integer", "minimum": 1},
+    "nonce": {"type": "string", "minLength": 8, "maxLength": 64},
+    "approval": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["required", "decision"],
+      "properties": {
+        "required": {"type": "boolean"},
+        "decision": {"enum": ["approve"]},
+        "actor": {"type": ["string", "null"], "maxLength": 120}
+      }
+    },
+    "payload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["phone"],
+      "properties": {
+        "customer_name": {"type": ["string", "null"], "maxLength": 160},
+        "phone": {"type": "string", "minLength": 7, "maxLength": 32},
+        "vehicle": {"type": ["string", "null"], "maxLength": 160},
+        "preferred_at": {"type": ["string", "null"], "maxLength": 120},
+        "comment": {"type": ["string", "null"], "maxLength": 2000}
+      }
+    },
+    "callback_url": {"type": "string", "minLength": 8, "maxLength": 500}
+  }
+}

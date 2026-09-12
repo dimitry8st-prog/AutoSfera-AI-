@@ -1,0 +1,48 @@
+{
+  "catalog_version": "3.1-pilot",
+  "owner": "integration-owner",
+  "webhook_path": "autosfera-actions",
+  "provider": "n8n-sandbox",
+  "notes": "Sandbox WF-00 dispatches create_lead / create_test_drive / create_service to an in-gateway demo CRM adapter equivalent to WF-10/11/20. Child workflows are imported as the catalog and can later replace the inlined adapter via Execute Workflow. No live CRM or Telegram.",
+  "workflows": [
+    {
+      "code": "WF-00",
+      "id": "autosfera-wf-00-action-gateway",
+      "file": "workflows/AUTOSFERA_WF-00_ACTION_GATEWAY.json",
+      "name": "AUTOSFERA_WF-00_ACTION_GATEWAY",
+      "role": "gateway",
+      "publish": true,
+      "timeout_seconds": 30
+    },
+    {
+      "code": "WF-10",
+      "id": "autosfera-wf-10-sales-lead",
+      "file": "workflows/AUTOSFERA_WF-10_SALES_LEAD.json",
+      "name": "AUTOSFERA_WF-10_SALES_LEAD",
+      "action_type": "create_lead",
+      "kind": "lead",
+      "timeout_seconds": 10,
+      "retry_policy": {"max_attempts": 3, "strategy": "bounded"}
+    },
+    {
+      "code": "WF-11",
+      "id": "autosfera-wf-11-test-drive",
+      "file": "workflows/AUTOSFERA_WF-11_TEST_DRIVE.json",
+      "name": "AUTOSFERA_WF-11_TEST_DRIVE",
+      "action_type": "create_test_drive",
+      "kind": "test_drive",
+      "timeout_seconds": 10,
+      "retry_policy": {"max_attempts": 3, "strategy": "bounded"}
+    },
+    {
+      "code": "WF-20",
+      "id": "autosfera-wf-20-service-booking",
+      "file": "workflows/AUTOSFERA_WF-20_SERVICE_BOOKING.json",
+      "name": "AUTOSFERA_WF-20_SERVICE_BOOKING",
+      "action_type": "create_service",
+      "kind": "service",
+      "timeout_seconds": 10,
+      "retry_policy": {"max_attempts": 3, "strategy": "bounded"}
+    }
+  ]
+}
