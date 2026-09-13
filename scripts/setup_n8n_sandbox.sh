@@ -37,6 +37,7 @@ PY
 fi
 
 compose up -d postgres
+compose stop n8n 2>/dev/null || true
 compose run --rm n8n-import
 compose run --rm n8n-publish
 compose up -d n8n api
@@ -48,6 +49,18 @@ until curl --fail --silent http://127.0.0.1:${APP_PORT:-8000}/ready >/dev/null; 
   if [ "$attempt" -ge 60 ]; then
     compose ps
     echo "AutoSfera API did not become ready." >&2
+    exit 1
+  fi
+  sleep 2
+done
+
+echo "Waiting for n8n webhook execution..."
+attempt=0
+until [ "$(curl --silent --output /dev/null --write-out '%{http_code}' --max-time 3 -X POST http://127.0.0.1:${N8N_PORT:-5678}/webhook/autosfera-actions || echo 000)" = "500" ]; do
+  attempt=$((attempt + 1))
+  if [ "$attempt" -ge 30 ]; then
+    compose ps
+    echo "n8n webhook did not become executable." >&2
     exit 1
   fi
   sleep 2

@@ -5,44 +5,106 @@
     {
       "id": "faq-sales-crossover",
       "title": "FAQ Sales: кроссовер",
-      "tags": ["sales", "кроссовер", "nova drive"],
+      "tags": [
+        "sales",
+        "кроссовер",
+        "nova drive"
+      ],
       "agent": "SALES_AGENT",
-      "content": "В: Какой кроссовер есть в наличии? О: Nova Drive от 2 400 000 руб., комплектации Standard/Premium/Sport. Уточняем бюджет и передаём менеджеру при заявке."
+      "content": "В: Какой кроссовер есть в наличии? О: Nova Drive от 2 400 000 руб., комплектации Standard/Premium/Sport. Уточняем бюджет и передаём менеджеру при заявке.",
+      "metadata": {
+        "version": "2026-09-12",
+        "owner": "База знаний",
+        "status": "approved",
+        "source_type": "json",
+        "source_ref": "knowledge_base/faq/agent_faq.json"
+      }
     },
     {
       "id": "faq-sales-credit",
       "title": "FAQ Sales: кредит",
-      "tags": ["sales", "кредит"],
+      "tags": [
+        "sales",
+        "кредит"
+      ],
       "agent": "SALES_AGENT",
-      "content": "В: Какие условия кредита? О: Взнос от 20%, до 60 мес., от 9,9%. Одобрение только кредитный специалист."
+      "content": "В: Какие условия кредита? О: Взнос от 20%, до 60 мес., от 9,9%. Одобрение только кредитный специалист.",
+      "metadata": {
+        "version": "2026-09-12",
+        "owner": "База знаний",
+        "status": "approved",
+        "source_type": "json",
+        "source_ref": "knowledge_base/faq/agent_faq.json"
+      }
     },
     {
       "id": "faq-support-status",
       "title": "FAQ Support: статус",
-      "tags": ["support", "статус заказа"],
+      "tags": [
+        "support",
+        "статус заказа"
+      ],
       "agent": "SUPPORT_AGENT",
-      "content": "В: Как узнать статус? О: Назовите номер заказа вида АН-2024-XXXX. Известные тестовые: АН-2024-0512, АН-2024-0388."
+      "content": "В: Как узнать статус? О: Назовите номер заказа вида АН-2024-XXXX. Известные тестовые: АН-2024-0512, АН-2024-0388.",
+      "metadata": {
+        "version": "2026-09-12",
+        "owner": "База знаний",
+        "status": "approved",
+        "source_type": "json",
+        "source_ref": "knowledge_base/faq/agent_faq.json"
+      }
     },
     {
       "id": "faq-support-docs",
       "title": "FAQ Support: документы",
-      "tags": ["support", "документы"],
+      "tags": [
+        "support",
+        "документы"
+      ],
       "agent": "SUPPORT_AGENT",
-      "content": "В: Какие документы нужны? О: Паспорт и ИНН; для кредита — справка о доходах."
+      "content": "В: Какие документы нужны? О: Паспорт и ИНН; для кредита — справка о доходах.",
+      "metadata": {
+        "version": "2026-09-12",
+        "owner": "База знаний",
+        "status": "approved",
+        "source_type": "json",
+        "source_ref": "knowledge_base/faq/agent_faq.json"
+      }
     },
     {
       "id": "faq-service-warranty",
       "title": "FAQ Service: гарантия кузова",
-      "tags": ["service", "гарантия", "кузов"],
+      "tags": [
+        "service",
+        "гарантия",
+        "кузов"
+      ],
       "agent": "SERVICE_AGENT",
-      "content": "В: Какая гарантия на кузов? О: 6 лет от сквозной коррозии. Подтверждение случая — только инженер."
+      "content": "В: Какая гарантия на кузов? О: 6 лет от сквозной коррозии. Подтверждение случая — только инженер.",
+      "metadata": {
+        "version": "2026-09-12",
+        "owner": "База знаний",
+        "status": "approved",
+        "source_type": "json",
+        "source_ref": "knowledge_base/faq/agent_faq.json"
+      }
     },
     {
       "id": "faq-service-to",
       "title": "FAQ Service: ТО",
-      "tags": ["service", "то"],
+      "tags": [
+        "service",
+        "то"
+      ],
       "agent": "SERVICE_AGENT",
-      "content": "В: Когда проходить ТО? О: Каждые 15 000 км или раз в год."
+      "content": "В: Когда проходить ТО? О: Каждые 15 000 км или раз в год.",
+      "metadata": {
+        "version": "2026-09-12",
+        "owner": "База знаний",
+        "status": "approved",
+        "source_type": "json",
+        "source_ref": "knowledge_base/faq/agent_faq.json"
+      }
     }
   ]
 }

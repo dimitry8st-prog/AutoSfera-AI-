@@ -1,0 +1,47 @@
+{
+  "id": "autosfera-wf-11-test-drive",
+  "name": "AUTOSFERA_WF-11_TEST_DRIVE",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "autosfera-wf-11-trigger",
+      "name": "Execute Workflow Trigger",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1,
+      "position": [0, 0]
+    },
+    {
+      "parameters": {
+        "jsCode": "const job = $json;\nif (job.action_type !== 'create_test_drive' || job.kind !== 'test_drive') throw new Error('WF-11 accepts only create_test_drive');\nreturn [{json: {...job, result: {provider: 'n8n-sandbox', workflow: 'AUTOSFERA_WF-11_TEST_DRIVE', action_type: 'create_test_drive', kind: 'test_drive', external_id: $execution.id}}}];"
+      },
+      "id": "autosfera-wf-11-demo",
+      "name": "Demo CRM Test Drive Adapter",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [240, 0]
+    }
+  ],
+  "connections": {
+    "Execute Workflow Trigger": {
+      "main": [[{"node": "Demo CRM Test Drive Adapter", "type": "main", "index": 0}]]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1",
+    "saveExecutionProgress": true,
+    "executionTimeout": 10
+  },
+  "active": false,
+  "versionId": "autosfera-wf-11-v1",
+  "meta": {
+    "templateCredsSetupCompleted": false,
+    "autosfera": {
+      "code": "WF-11",
+      "owner": "integration-owner",
+      "timeout_seconds": 10,
+      "retry_policy": {"max_attempts": 3, "strategy": "bounded"}
+    }
+  },
+  "tags": []
+}

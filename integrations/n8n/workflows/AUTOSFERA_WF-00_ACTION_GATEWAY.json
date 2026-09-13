@@ -1,0 +1,105 @@
+{
+  "id": "autosfera-wf-00-action-gateway",
+  "name": "AUTOSFERA_WF-00_ACTION_GATEWAY",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "autosfera-actions",
+        "responseMode": "lastNode",
+        "options": {"rawBody": true}
+      },
+      "id": "autosfera-wf-00-webhook",
+      "name": "Signed Action Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [0, 0],
+      "webhookId": "autosfera-actions"
+    },
+    {
+      "parameters": {
+        "jsCode": "const crypto = require('crypto');\nconst secret = $env.ACTION_WEBHOOK_SECRET;\nif (!secret) throw new Error('ACTION_WEBHOOK_SECRET is not configured');\nconst signature = $json.headers?.['x-autosfera-signature'] || '';\nconst raw = typeof $json.body === 'string' ? $json.body : JSON.stringify($json.body);\nconst expected = crypto.createHmac('sha256', secret).update(raw).digest('hex');\nif (signature.length !== expected.length || !crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expected))) throw new Error('Invalid Action Gateway signature');\nconst job = typeof $json.body === 'string' ? JSON.parse($json.body) : $json.body;\nconst allowed = {create_lead: 'lead', create_test_drive: 'test_drive', create_service: 'service'};\nif (!Object.prototype.hasOwnProperty.call(allowed, job.action_type)) throw new Error('Unsupported action_type');\nif (job.kind !== allowed[job.action_type]) throw new Error('action_type_kind_mismatch');\nconst issuedAt = Number(job.issued_at);\nif (!Number.isFinite(issuedAt) || Math.abs((Date.now() / 1000) - issuedAt) > 300) throw new Error('stale_or_invalid_timestamp');\nif (!job.nonce || String(job.nonce).length < 8) throw new Error('nonce_required');\nif (!job.idempotency_key || !job.trace_id || !job.dealer_id || !job.action_id) throw new Error('missing_correlation');\nif (!job.payload || typeof job.payload !== 'object') throw new Error('invalid_payload');\nreturn [{json: job}];"
+      },
+      "id": "autosfera-wf-00-verify",
+      "name": "Verify and Validate",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [240, 0]
+    },
+    {
+      "parameters": {
+        "jsCode": "const adapters = {create_lead: {workflow: 'AUTOSFERA_WF-10_SALES_LEAD', kind: 'lead'}, create_test_drive: {workflow: 'AUTOSFERA_WF-11_TEST_DRIVE', kind: 'test_drive'}, create_service: {workflow: 'AUTOSFERA_WF-20_SERVICE_BOOKING', kind: 'service'}};\nconst spec = adapters[$json.action_type];\nif (!spec) throw new Error('Unsupported action_type');\nreturn [{json: {...$json, result: {provider: 'n8n-sandbox', workflow: spec.workflow, action_type: $json.action_type, kind: spec.kind, external_id: $execution.id}}}];"
+      },
+      "id": "autosfera-wf-00-dispatch",
+      "name": "Dispatch Demo CRM",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [480, 0]
+    },
+    {
+      "parameters": {
+        "jsCode": "const crypto = require('crypto');\nconst callback = {action_id: $json.action_id, dealer_id: $json.dealer_id, trace_id: $json.trace_id, status: 'completed', result: $json.result};\nconst raw = JSON.stringify(callback);\nconst signature = crypto.createHmac('sha256', $env.ACTION_WEBHOOK_SECRET).update(raw).digest('hex');\nreturn [{json: {raw, signature}}];"
+      },
+      "id": "autosfera-wf-00-callback",
+      "name": "Prepare Signed Callback",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [960, 0]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.AUTOSFERA_API_URL + '/api/actions/callback' }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {"name": "Content-Type", "value": "application/json"},
+            {"name": "X-AutoSfera-Signature", "value": "={{ $json.signature }}"}
+          ]
+        },
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ $json.raw }}",
+        "options": {"timeout": 10000}
+      },
+      "id": "autosfera-wf-00-return",
+      "name": "Return Result",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1200, 0]
+    }
+  ],
+  "connections": {
+    "Signed Action Webhook": {
+      "main": [[{"node": "Verify and Validate", "type": "main", "index": 0}]]
+    },
+    "Verify and Validate": {
+      "main": [[{"node": "Dispatch Demo CRM", "type": "main", "index": 0}]]
+    },
+    "Dispatch Demo CRM": {
+      "main": [[{"node": "Prepare Signed Callback", "type": "main", "index": 0}]]
+    },
+    "Prepare Signed Callback": {
+      "main": [[{"node": "Return Result", "type": "main", "index": 0}]]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1",
+    "saveExecutionProgress": true,
+    "executionTimeout": 30
+  },
+  "active": false,
+  "versionId": "autosfera-wf-00-v3",
+  "meta": {
+    "templateCredsSetupCompleted": false,
+    "autosfera": {
+      "code": "WF-00",
+      "owner": "integration-owner",
+      "timeout_seconds": 30,
+      "retry_policy": {"max_attempts": 3, "strategy": "bounded"}
+    }
+  },
+  "tags": []
+}

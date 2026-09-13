@@ -6,6 +6,7 @@ services:
     environment:
       ACTION_GATEWAY_MODE: n8n
       ACTION_WEBHOOK_URL: http://n8n:5678/webhook/autosfera-actions
+      ACTION_CALLBACK_URL: http://api:8000/api/actions/callback
 
   n8n:
     image: n8nio/n8n:2.37.10
@@ -46,7 +47,7 @@ services:
     image: n8nio/n8n:2.37.10
     profiles: [setup]
     environment: *n8n_environment
-    command: ["import:workflow", "--input=/workflows/action-gateway.workflow.json"]
+    command: ["import:workflow", "--separate", "--input=/workflows/workflows"]
     volumes:
       - n8n_sandbox_data:/home/node/.n8n
       - ./integrations/n8n:/workflows:ro
@@ -56,7 +57,7 @@ services:
     image: n8nio/n8n:2.37.10
     profiles: [setup]
     environment: *n8n_environment
-    command: ["publish:workflow", "--id=autosfera-action-gateway-sandbox"]
+    command: ["publish:workflow", "--id=autosfera-wf-00-action-gateway"]
     volumes:
       - n8n_sandbox_data:/home/node/.n8n
       - ./integrations/n8n:/workflows:ro

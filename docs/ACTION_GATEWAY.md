@@ -54,13 +54,23 @@ are deliberately excluded from log messages.
 
 - `ACTION_GATEWAY_MODE=mock` executes against the local demo CRM. This is the
   default and is fully covered by automated tests.
-- `ACTION_GATEWAY_MODE=n8n` sends a signed JSON payload to
+- `ACTION_GATEWAY_MODE=n8n` sends a signed ActionRequest v1 payload to
   `ACTION_WEBHOOK_URL`. The main chat remains available when n8n is down; the
   action becomes `failed` and can be retried by an authorized role.
 
-Requests and callbacks use HMAC-SHA256 with `ACTION_WEBHOOK_SECRET`. Production
-deployments must use a random secret and TLS. n8n never receives database
-credentials and never writes directly to application tables.
+The envelope includes `action_type`, `issued_at`, `nonce`, `idempotency_key`,
+`trace_id` and `callback_url`. HMAC-SHA256 covers the raw JSON body with
+`ACTION_WEBHOOK_SECRET`. Optional headers `X-AutoSfera-Timestamp` and
+`X-AutoSfera-Nonce` repeat the body values. `ACTION_CALLBACK_URL` defaults to
+`http://api:8000/api/actions/callback` inside the Compose sandbox.
+
+Production deployments must use a random secret and TLS. n8n never receives
+database credentials and never writes directly to application tables.
+
+WF-00 is the only published webhook. It verifies the signature, rejects a
+timestamp skew greater than 300 seconds, requires a nonce, and dispatches
+`create_lead` / `create_test_drive` / `create_service`. The sandbox adapters
+are a demo CRM, not a live CRM or Telegram bot.
 
 ## API
 
@@ -73,15 +83,16 @@ credentials and never writes directly to application tables.
 | `POST` | `/api/actions/{id}/retry` | retry a failed job |
 | `POST` | `/api/actions/callback` | signed n8n result |
 
-JSON contracts are in `contracts/action-job.schema.json` and
-`contracts/action-callback.schema.json`. The inactive n8n demo adapter is in
-`integrations/n8n/action-gateway.workflow.json`.
+JSON contracts are in `contracts/action-job.schema.json`,
+`contracts/action-request.schema.json` and
+`contracts/action-callback.schema.json`. The n8n catalog is in
+`integrations/n8n/workflows/` (WF-00 gateway plus WF-10/11/20 demo adapters).
 
 ## Production checklist
 
 1. Apply Alembic migrations before starting the updated API.
 2. Rotate all demo secrets and restrict CORS.
-3. Import the n8n workflow and set its environment variables.
-4. Replace the demo adapter with the selected CRM/DMS API mapping.
+3. Import the n8n catalog and set its environment variables.
+4. Replace the demo adapters with the selected CRM/DMS API mapping.
 5. Run a sandbox acceptance test, including duplicate delivery and timeout.
 6. Activate the workflow only after signed callback verification succeeds.

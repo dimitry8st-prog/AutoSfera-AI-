@@ -1,0 +1,21 @@
+{
+  "request_id": "22222222-2222-4222-8222-222222222222",
+  "action_id": "22222222-2222-4222-8222-222222222222",
+  "trace_id": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+  "dealer_id": "main-salon",
+  "actor": {"subject": "sales"},
+  "action_type": "create_test_drive",
+  "kind": "test_drive",
+  "idempotency_key": "fixture:create_test_drive",
+  "issued_at": 1757692800,
+  "nonce": "fixture-nonce-drive-01",
+  "approval": {"required": true, "decision": "approve", "actor": "sales"},
+  "payload": {
+    "customer_name": "Анна",
+    "phone": "+79990000000",
+    "vehicle": "Nova Drive",
+    "preferred_at": "2026-09-15T10:00:00+03:00",
+    "comment": "fixture test drive"
+  },
+  "callback_url": "http://api:8000/api/actions/callback"
+}

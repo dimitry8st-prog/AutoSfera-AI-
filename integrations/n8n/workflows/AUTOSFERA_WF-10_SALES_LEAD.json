@@ -1,0 +1,47 @@
+{
+  "id": "autosfera-wf-10-sales-lead",
+  "name": "AUTOSFERA_WF-10_SALES_LEAD",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "autosfera-wf-10-trigger",
+      "name": "Execute Workflow Trigger",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1,
+      "position": [0, 0]
+    },
+    {
+      "parameters": {
+        "jsCode": "const job = $json;\nif (job.action_type !== 'create_lead' || job.kind !== 'lead') throw new Error('WF-10 accepts only create_lead');\nreturn [{json: {...job, result: {provider: 'n8n-sandbox', workflow: 'AUTOSFERA_WF-10_SALES_LEAD', action_type: 'create_lead', kind: 'lead', external_id: $execution.id}}}];"
+      },
+      "id": "autosfera-wf-10-demo",
+      "name": "Demo CRM Lead Adapter",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [240, 0]
+    }
+  ],
+  "connections": {
+    "Execute Workflow Trigger": {
+      "main": [[{"node": "Demo CRM Lead Adapter", "type": "main", "index": 0}]]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1",
+    "saveExecutionProgress": true,
+    "executionTimeout": 10
+  },
+  "active": false,
+  "versionId": "autosfera-wf-10-v1",
+  "meta": {
+    "templateCredsSetupCompleted": false,
+    "autosfera": {
+      "code": "WF-10",
+      "owner": "integration-owner",
+      "timeout_seconds": 10,
+      "retry_policy": {"max_attempts": 3, "strategy": "bounded"}
+    }
+  },
+  "tags": []
+}
