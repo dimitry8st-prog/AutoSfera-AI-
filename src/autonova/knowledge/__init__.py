@@ -99,6 +99,14 @@ class KnowledgeBase:
         if not self.root.exists():
             raise FileNotFoundError(f"Knowledge base not found: {self.root}")
 
+        governance_path = self.root / "_governance.json"
+        governance = (
+            json.loads(governance_path.read_text(encoding="utf-8"))
+            if governance_path.exists()
+            else {}
+        )
+        metadata_defaults = governance.get("metadata_defaults", {})
+
         for path in sorted(self.root.rglob("*.json")):
             payload = json.loads(path.read_text(encoding="utf-8"))
             section = payload.get("section") or path.parent.name
@@ -111,7 +119,10 @@ class KnowledgeBase:
                         content=item["content"],
                         tags=tuple(item.get("tags", [])),
                         agent=item.get("agent"),
-                        metadata=_approved_metadata(section, item.get("metadata") or {}),
+                        metadata=_approved_metadata(
+                            section,
+                            {**metadata_defaults, **item.get("metadata", {})},
+                        ),
                     )
                 )
         self._documents = docs
@@ -227,6 +238,8 @@ _SUFFIXES = (
     "у", "ю", "ы", "и", "а", "я", "е", "о", "ь",
 )
 _SYNONYMS: dict[str, tuple[str, ...]] = {
+    "автомобил": ("машин", "авто"),
+    "машин": ("автомобил", "авто"),
     "трейд-ин": ("trade-in", "трейд", "обмен", "обменять", "доплат"),
     "трейд": ("trade-in", "трейд-ин", "обмен"),
     "trade-in": ("трейд-ин", "трейд", "обмен", "обменять"),
@@ -277,6 +290,10 @@ _SYNONYMS: dict[str, tuple[str, ...]] = {
     "осмотра": ("гарант", "инженер"),
     "коррозия": ("кузов", "гарант"),
     "кузова": ("кузов", "гарант"),
+    "сдат": ("trade-in", "обмен"),
+    "передат": ("эскалац", "руководител"),
+    "заказан": ("заказ", "статус"),
+    "юридическ": ("b2b", "корпоративн"),
 }
 
 

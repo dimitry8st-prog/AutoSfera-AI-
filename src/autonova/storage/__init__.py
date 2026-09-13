@@ -136,6 +136,18 @@ class PlatformStore:
                 );
                 CREATE INDEX IF NOT EXISTS ix_action_events_action_created
                     ON action_events(action_id, created_at);
+
+                CREATE TABLE IF NOT EXISTS feedback (
+                    id TEXT PRIMARY KEY,
+                    dealer_id TEXT NOT NULL,
+                    session_id TEXT NOT NULL,
+                    rating INTEGER NOT NULL CHECK (rating BETWEEN 1 AND 5),
+                    comment TEXT,
+                    created_at TEXT NOT NULL,
+                    UNIQUE (dealer_id, session_id)
+                );
+                CREATE INDEX IF NOT EXISTS ix_feedback_dealer_created
+                    ON feedback(dealer_id, created_at);
                 """
             )
             self._ensure_column(db, "requests", "updated_at", "TEXT")
@@ -535,6 +547,10 @@ class PlatformStore:
                 "SELECT status, COUNT(*) AS total FROM requests WHERE dealer_id = ? GROUP BY status",
                 (dealer_id,),
             ).fetchall()
+            feedback = db.execute(
+                "SELECT COUNT(*) AS total, AVG(rating) AS average FROM feedback WHERE dealer_id = ?",
+                (dealer_id,),
+            ).fetchone()
         return {
             "dealer_id": dealer_id,
             "conversations": conversations,
@@ -542,7 +558,28 @@ class PlatformStore:
             "requests": requests,
             "requests_by_kind": {row["kind"]: row["total"] for row in by_kind},
             "requests_by_status": {row["status"]: row["total"] for row in by_status},
+            "csat_responses": feedback["total"],
+            "csat": round(float(feedback["average"]), 2) if feedback["average"] is not None else None,
         }
+
+    def record_feedback(
+        self, dealer_id: str, session_id: str, rating: int, comment: str | None = None
+    ) -> tuple[dict[str, Any], bool]:
+        feedback_id = str(uuid4())
+        created_at = self._now()
+        with self.connect() as db:
+            cursor = db.execute(
+                """INSERT INTO feedback (id, dealer_id, session_id, rating, comment, created_at)
+                VALUES (?, ?, ?, ?, ?, ?)
+                ON CONFLICT (dealer_id, session_id) DO NOTHING""",
+                (feedback_id, dealer_id, session_id, rating, comment, created_at),
+            )
+            created = cursor.rowcount == 1
+            row = db.execute(
+                "SELECT * FROM feedback WHERE dealer_id = ? AND session_id = ?",
+                (dealer_id, session_id),
+            ).fetchone()
+        return dict(row), created
 
 
 def build_store() -> Any:

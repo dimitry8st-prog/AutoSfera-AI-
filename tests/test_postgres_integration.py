@@ -50,6 +50,12 @@ def test_postgres_store_contract_and_dealer_isolation() -> None:
         assert analytics["requests"] == 1
         assert analytics["requests_by_kind"] == {"test_drive": 1}
 
+        feedback, created = store.record_feedback(dealer_id, "ci-session", 5, "ok")
+        duplicate, duplicate_created = store.record_feedback(dealer_id, "ci-session", 1)
+        assert created and not duplicate_created
+        assert feedback["id"] == duplicate["id"]
+        assert store.analytics(dealer_id)["csat"] == 5.0
+
         action, created = store.create_action_job(
             dealer_id, "ci-user", "ci-session", "test_drive",
             {"phone": "+79990000000", "vehicle": "Nova Drive"},
@@ -77,6 +83,7 @@ def test_postgres_store_contract_and_dealer_isolation() -> None:
             cur.execute("DELETE FROM action_events WHERE dealer_id IN (%s, %s)", (dealer_id, other_dealer_id))
             cur.execute("DELETE FROM action_jobs WHERE dealer_id IN (%s, %s)", (dealer_id, other_dealer_id))
             cur.execute("DELETE FROM sessions WHERE dealer_id IN (%s, %s)", (dealer_id, other_dealer_id))
+            cur.execute("DELETE FROM feedback WHERE dealer_id IN (%s, %s)", (dealer_id, other_dealer_id))
             cur.execute("DELETE FROM requests WHERE dealer_id IN (%s, %s)", (dealer_id, other_dealer_id))
 
 

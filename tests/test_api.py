@@ -99,3 +99,23 @@ def test_health_and_chat_flow(monkeypatch, tmp_path):
     analytics = client.get("/api/analytics/summary", headers=staff_headers).json()
     assert analytics["conversations"] == 3
     assert analytics["requests"] == 1
+
+    feedback = client.post(
+        "/api/feedback",
+        json={"session_id": data["session_id"], "rating": 5, "comment": "Понятно"},
+    )
+    assert feedback.status_code == 200
+    assert feedback.json()["created"] is True
+    duplicate = client.post(
+        "/api/feedback", json={"session_id": data["session_id"], "rating": 1}
+    )
+    assert duplicate.json()["created"] is False
+    summary = client.get("/api/feedback/summary", headers=staff_headers).json()
+    assert summary == {
+        "dealer_id": "main-salon", "responses": 1, "csat": 5.0, "target": 4.0
+    }
+
+    readiness = client.get("/api/beta/readiness", headers=staff_headers)
+    assert readiness.status_code == 200
+    assert readiness.json()["status"] == "ready_for_controlled_beta"
+    assert readiness.json()["blockers"] == []

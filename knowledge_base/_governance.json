@@ -1,0 +1,9 @@
+{
+  "metadata_defaults": {
+    "version": "2026-09-13-beta.1",
+    "owner": "AutoSfera product owner",
+    "status": "approved"
+  },
+  "scope": "controlled beta with synthetic data",
+  "review_required_before": "production or real personal data"
+}

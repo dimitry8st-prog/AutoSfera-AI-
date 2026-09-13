@@ -16,7 +16,6 @@ from autonova.logging import get_logger
 
 logger = get_logger("autonova.rag")
 
-
 def _section_boost(query: str, section: str) -> float:
     q = query.lower().replace("ё", "е")
     base = {
