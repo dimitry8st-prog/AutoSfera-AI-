@@ -398,6 +398,23 @@ def vehicle_selection(message: str, chunks: list[RetrievedChunk], ctx: dict[str,
             rag_ids=[doc.id] if doc is not None else [],
         )
 
+    lowered_utterance = utterance.lower().replace("ё", "е")
+    if any(
+        marker in lowered_utterance
+        for marker in ("условия покуп", "порядок покуп", "вариант оплат", "как приобрести")
+    ):
+        kb = (ctx or {}).get("kb")
+        doc = kb.get("sales-purchase-conditions") if kb is not None else None
+        if doc is None:
+            return SkillResult(
+                "vehicle_selection",
+                "В утверждённой базе нет описания условий покупки. Передаю запрос менеджеру.",
+                escalated=True,
+                escalation_target="sales_manager",
+                escalation_reason="нет утверждённых условий покупки",
+            )
+        return SkillResult("vehicle_selection", doc.content, rag_ids=[doc.id])
+
     catalog_text = _catalog_blob(chunks, {**(ctx or {}), "message": utterance})
     models = _parse_catalog_models(catalog_text)
     ids = [c.document.id for c in chunks if c.document.id == "sales-models"]

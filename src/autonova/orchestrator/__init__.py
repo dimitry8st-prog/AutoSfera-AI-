@@ -11,6 +11,7 @@ from autonova.agents import AGENT_META, AgentReply, BaseAgent, build_agents, loa
 from autonova.knowledge import KnowledgeBase
 from autonova.llm import LLMClient, extract_json_object, get_llm_client
 from autonova.logging import DialogueLogger, get_logger, setup_logging
+from autonova.model_router import ModelRouter, RouterDecision
 from autonova.rag import RAGRetriever, build_retriever
 from autonova.skills import SkillRouter, build_skill_registry
 from autonova.config import get_settings
@@ -35,6 +36,7 @@ class OrchestratorGraphState(TypedDict, total=False):
     result: "TurnResult"
     greeting: str | None
     routing_reason: str | None
+    model_decision: RouterDecision
     selected_agent: str
     agent_reply: AgentReply
 
@@ -251,6 +253,7 @@ _AGENT_INTENT_KEYS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("SALES_AGENT", (
         "купить", "кроссовер", "седан", "кредит", "лизинг", "trade",
         "тест-драйв", "nova", "b2b", "юридическ", "модел", "каталог",
+        "условия покуп", "вариант оплат", "приобретени",
     )),
     ("SUPPORT_AGENT", (
         "заказ", "ан-2024", "документ", "статус", "возврат", "инн",
@@ -273,6 +276,11 @@ def _explicit_agent_intent(message: str, skills: SkillRouter | None = None) -> s
         hits[agent] = float(sum(1 for key in keys if key in lowered))
     if re.search(r"(?<![а-яa-z])то(?![а-яa-z])", lowered):
         hits["SERVICE_AGENT"] += 1.0
+    direct_ranked = sorted(hits.items(), key=lambda item: item[1], reverse=True)
+    if direct_ranked[0][1] > 0:
+        if direct_ranked[0][1] == direct_ranked[1][1]:
+            return None
+        return direct_ranked[0][0]
     if skills is not None:
         skill_best: dict[str, float] = {}
         for skill in skills.registry.values():
@@ -283,17 +291,14 @@ def _explicit_agent_intent(message: str, skills: SkillRouter | None = None) -> s
             # Internal skill keywords must not steal public client requests.
             if agent == "EMPLOYEE_AGENT" and hits["EMPLOYEE_AGENT"] <= 0:
                 continue
-            hits[agent] = max(hits[agent], score)
+            hits[agent] = score
     ranked = sorted(hits.items(), key=lambda item: item[1], reverse=True)
     best_agent, best_score = ranked[0]
     if best_score <= 0:
         return None
     second = ranked[1][1] if len(ranked) > 1 else 0
     if best_score == second:
-        tied = {agent for agent, score in hits.items() if score == best_score}
-        for agent in ("SALES_AGENT", "SUPPORT_AGENT", "SERVICE_AGENT", "EMPLOYEE_AGENT"):
-            if agent in tied:
-                return agent
+        return None
     return best_agent
 
 
@@ -320,6 +325,10 @@ class TurnResult:
     rag_ids: list[str]
     collected_fields: dict[str, Any] = field(default_factory=dict)
     routing_reason: str | None = None
+    model_route: str | None = None
+    model_tier: str | None = None
+    routing_intent: str | None = None
+    routing_risk: str | None = None
 
 
 class AIOrchestrator:
@@ -340,7 +349,16 @@ class AIOrchestrator:
         self.dealer_id = dealer_id or get_settings().dealer_id
         self.rag = rag or build_retriever(self.kb, self.dealer_id)
         self.skills = skills or SkillRouter(build_skill_registry())
-        self.llm = llm or get_llm_client()
+        settings = get_settings()
+        if llm is not None:
+            self.simple_llm = llm
+            self.complex_llm = llm
+        else:
+            self.simple_llm = get_llm_client(settings.openai_simple_model or settings.openai_model)
+            self.complex_llm = get_llm_client(settings.openai_complex_model or settings.openai_model)
+        # Compatibility alias for integrations that inject or inspect one client.
+        self.llm = self.simple_llm
+        self.model_router = ModelRouter()
         self.store = store
         self.agents: dict[str, BaseAgent] = build_agents(self.rag, self.skills)
         self.system_prompt = load_prompt("orchestrator.txt")
@@ -391,8 +409,9 @@ class AIOrchestrator:
                 session.history,
             )
 
-    def route(self, message: str) -> dict[str, str]:
-        raw = self.llm.complete(
+    def route(self, message: str, model_tier: str = "simple") -> dict[str, str]:
+        llm = self.complex_llm if model_tier == "complex" else self.simple_llm
+        raw = llm.complete(
             self.system_prompt,
             [{"role": "user", "content": message}],
         )
@@ -405,7 +424,10 @@ class AIOrchestrator:
             "greeting": data.get("greeting", f"Подключаю {AGENT_META[agent]['label']} AutoSfera AI."),
             "reason": data.get("reason", "intent_match"),
         }
-        logger.info("Routed to %s reason=%s", result["agent"], result["reason"])
+        logger.info(
+            "Routed to %s reason=%s model_tier=%s",
+            result["agent"], result["reason"], model_tier,
+        )
         return result
 
     def _build_graph(self) -> Any:
@@ -447,7 +469,8 @@ class AIOrchestrator:
 
     def _graph_route_agent(self, state: OrchestratorGraphState) -> OrchestratorGraphState:
         session = state["session"]
-        explicit_agent = _explicit_agent_intent(state["message"], self.skills)
+        decision = self.model_router.decide(state["message"], session.active_agent)
+        explicit_agent = decision.agent or _explicit_agent_intent(state["message"], self.skills)
         should_route = session.active_agent is None or (
             explicit_agent is not None and explicit_agent != session.active_agent
         )
@@ -456,9 +479,13 @@ class AIOrchestrator:
                 "selected_agent": session.active_agent,
                 "greeting": None,
                 "routing_reason": "session_continuity",
+                "model_decision": RouterDecision(
+                    route="skill", intent="follow_up", reason="session_continuity",
+                    agent=session.active_agent,
+                ),
             }
 
-        routed = self.route(state["message"])
+        routed = self.route(state["message"], decision.model_tier or "simple")
         # Deterministic domain signals take precedence over a malformed LLM route.
         selected = explicit_agent or routed["agent"]
         previous_agent = session.active_agent
@@ -472,6 +499,7 @@ class AIOrchestrator:
             "selected_agent": selected,
             "greeting": greeting,
             "routing_reason": reason,
+            "model_decision": decision,
         }
 
     @staticmethod
@@ -527,6 +555,11 @@ class AIOrchestrator:
     def _graph_persist_turn(self, state: OrchestratorGraphState) -> OrchestratorGraphState:
         session = state["session"]
         agent_reply = state["agent_reply"]
+        decision = state.get("model_decision")
+        final_model_route = "human" if agent_reply.escalated else (decision.route if decision else None)
+        final_routing_risk = (
+            "high" if agent_reply.escalated else (decision.risk if decision else None)
+        )
         greeting = state.get("greeting")
         reply_text = agent_reply.text
         if greeting:
@@ -538,6 +571,7 @@ class AIOrchestrator:
             "last_node": "persist_turn",
             "routing_reason": state.get("routing_reason"),
             "approval_required": agent_reply.escalated,
+            "model_route": final_model_route,
         })
         self._persist(session)
         return {"result": TurnResult(
@@ -553,6 +587,10 @@ class AIOrchestrator:
             rag_ids=agent_reply.rag_ids,
             collected_fields=agent_reply.collected_fields,
             routing_reason=state.get("routing_reason"),
+            model_route=final_model_route,
+            model_tier=decision.model_tier if decision else None,
+            routing_intent=decision.intent if decision else None,
+            routing_risk=final_routing_risk,
         )}
 
     def _safe_failure_result(
@@ -583,6 +621,9 @@ class AIOrchestrator:
             escalation_target="human_operator",
             rag_ids=[],
             routing_reason="graph_failure",
+            model_route="human",
+            routing_intent="technical_failure",
+            routing_risk="high",
         )
 
     def _orchestrator_faq_ids(self) -> set[str]:
@@ -599,6 +640,9 @@ class AIOrchestrator:
         *,
         reason: str,
         skill: str,
+        escalated: bool = False,
+        escalation_target: str | None = None,
+        model_decision: RouterDecision | None = None,
     ) -> TurnResult | None:
         document = self.kb.get(document_id)
         if document is None:
@@ -611,7 +655,7 @@ class AIOrchestrator:
             agent="AI_ORCHESTRATOR",
             skill=skill,
             reply=reply_text,
-            escalated=False,
+            escalated=escalated,
             rag_ids=rag_ids,
         )
         session.history.append({"role": "user", "content": message})
@@ -625,10 +669,73 @@ class AIOrchestrator:
             greeting=None,
             reply=reply_text,
             skill=skill,
-            escalated=False,
-            escalation_target=None,
+            escalated=escalated,
+            escalation_target=escalation_target,
             rag_ids=rag_ids,
             routing_reason=reason,
+            model_route=model_decision.route if model_decision else "skill",
+            model_tier=model_decision.model_tier if model_decision else None,
+            routing_intent=model_decision.intent if model_decision else reason,
+            routing_risk=model_decision.risk if model_decision else "low",
+        )
+
+    def _reply_from_router_decision(
+        self,
+        message: str,
+        session: SessionState,
+        dialogue: DialogueLogger,
+        decision: RouterDecision,
+    ) -> TurnResult:
+        if decision.route == "clarify":
+            reply_text = (
+                "Уточните, пожалуйста, о каких условиях идёт речь: покупке автомобиля, "
+                "оформлении заказа или сервисном обслуживании?"
+            )
+            skill = "route_clarification"
+            escalated = False
+        else:
+            reply_text = (
+                "Передаю обращение сотруднику AutoSfera AI. "
+                "Автоматически подтверждать решение или выполнять действие не буду."
+            )
+            skill = "human_handoff"
+            escalated = True
+        dialogue.log_routing("AI_ORCHESTRATOR", decision.reason, "")
+        dialogue.log_agent_reply(
+            agent="AI_ORCHESTRATOR",
+            skill=skill,
+            reply=reply_text,
+            escalated=escalated,
+            rag_ids=[],
+        )
+        session.history.extend([
+            {"role": "user", "content": message},
+            {"role": "assistant", "content": reply_text},
+        ])
+        session.metadata.update({
+            "routing_reason": "clarify" if decision.route == "clarify" else decision.reason,
+            "model_route": decision.route,
+            "routing_intent": decision.intent,
+            "routing_risk": decision.risk,
+            "approval_required": escalated,
+        })
+        self._persist(session)
+        return TurnResult(
+            session_id=session.session_id,
+            channel=session.channel,
+            agent="AI_ORCHESTRATOR",
+            agent_label="AI Orchestrator",
+            greeting=None,
+            reply=reply_text,
+            skill=skill,
+            escalated=escalated,
+            escalation_target=decision.human_target if escalated else None,
+            rag_ids=[],
+            routing_reason="clarify" if decision.route == "clarify" else decision.reason,
+            model_route=decision.route,
+            model_tier=decision.model_tier,
+            routing_intent=decision.intent,
+            routing_risk=decision.risk,
         )
 
     def _handle_orchestrator_direct(
@@ -646,6 +753,12 @@ class AIOrchestrator:
                 _SAFETY_DOCUMENTS[safety],
                 reason=f"safety_{safety}",
                 skill="safety_refusal",
+            )
+
+        model_decision = self.model_router.decide(message, session.active_agent)
+        if model_decision.route in {"clarify", "human"}:
+            return self._reply_from_router_decision(
+                message, session, dialogue, model_decision
             )
 
         if _customer_staff_handoff(message):
@@ -769,10 +882,11 @@ class AIOrchestrator:
 
         greeting: str | None = None
         routing_reason: str | None = None
+        model_decision = self.model_router.decide(message, session.active_agent)
 
         if session.active_agent is None:
-            routed = self.route(message)
-            session.active_agent = routed["agent"]
+            routed = self.route(message, model_decision.model_tier or "simple")
+            session.active_agent = model_decision.agent or routed["agent"]
             greeting = routed["greeting"]
             routing_reason = routed["reason"]
             dialogue.log_routing(
@@ -823,4 +937,8 @@ class AIOrchestrator:
             rag_ids=agent_reply.rag_ids,
             collected_fields=agent_reply.collected_fields,
             routing_reason=routing_reason,
+            model_route="human" if agent_reply.escalated else model_decision.route,
+            model_tier=model_decision.model_tier,
+            routing_intent=model_decision.intent,
+            routing_risk="high" if agent_reply.escalated else model_decision.risk,
         )

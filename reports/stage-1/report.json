@@ -1,0 +1,251 @@
+{
+  "runtime": {
+    "app_version": "3.1.0-beta.1",
+    "build_sha": "cbc6078",
+    "prompts": {
+      "version": "2026-09-13-beta.1",
+      "fingerprint": "f94fca3b57fd"
+    },
+    "knowledge_base": {
+      "version": "2026-09-13-beta.1",
+      "fingerprint": "c8b0cb409f4a"
+    },
+    "llm": {
+      "mode": "mock",
+      "model": null
+    },
+    "rag_backend": "tfidf"
+  },
+  "passed": 9,
+  "total": 13,
+  "results": [
+    {
+      "id": "catalog",
+      "passed": true,
+      "errors": [],
+      "observations": [
+        {
+          "agent": "SALES_AGENT",
+          "skill": "vehicle_selection",
+          "routing_reason": "intent_match",
+          "escalated": false,
+          "rag_ids": [
+            "sales-models"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "order_status",
+      "passed": true,
+      "errors": [],
+      "observations": [
+        {
+          "agent": "SUPPORT_AGENT",
+          "skill": "order_status",
+          "routing_reason": "intent_match",
+          "escalated": false,
+          "rag_ids": [
+            "support-orders",
+            "faq-support-status"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "warranty",
+      "passed": true,
+      "errors": [],
+      "observations": [
+        {
+          "agent": "SERVICE_AGENT",
+          "skill": "warranty_consultation",
+          "routing_reason": "intent_match",
+          "escalated": false,
+          "rag_ids": [
+            "service-warranty"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "service_booking",
+      "passed": true,
+      "errors": [],
+      "observations": [
+        {
+          "agent": "SERVICE_AGENT",
+          "skill": "service_booking",
+          "routing_reason": "intent_match",
+          "escalated": false,
+          "rag_ids": [
+            "service-booking"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "employee_process",
+      "passed": true,
+      "errors": [],
+      "observations": [
+        {
+          "agent": "EMPLOYEE_AGENT",
+          "skill": "process_lookup",
+          "routing_reason": "intent_match",
+          "escalated": false,
+          "rag_ids": [
+            "internal-sales-process",
+            "internal-escalation"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "switch_service_to_purchase",
+      "passed": false,
+      "errors": [
+        "agent: expected 'SALES_AGENT', got 'SERVICE_AGENT'",
+        "routing_reason: expected 'topic_switch', got 'session_continuity'"
+      ],
+      "observations": [
+        {
+          "agent": "SERVICE_AGENT",
+          "skill": "warranty_consultation",
+          "routing_reason": "intent_match",
+          "escalated": false,
+          "rag_ids": [
+            "service-warranty"
+          ]
+        },
+        {
+          "agent": "SERVICE_AGENT",
+          "skill": "warranty_consultation",
+          "routing_reason": "session_continuity",
+          "escalated": false,
+          "rag_ids": [
+            "service-warranty"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "switch_sales_to_service",
+      "passed": false,
+      "errors": [
+        "agent: expected 'SERVICE_AGENT', got 'SUPPORT_AGENT'"
+      ],
+      "observations": [
+        {
+          "agent": "SALES_AGENT",
+          "skill": "vehicle_selection",
+          "routing_reason": "intent_match",
+          "escalated": false,
+          "rag_ids": [
+            "sales-models"
+          ]
+        },
+        {
+          "agent": "SUPPORT_AGENT",
+          "skill": "customer_faq",
+          "routing_reason": "topic_switch",
+          "escalated": false,
+          "rag_ids": [
+            "script-service-client",
+            "policy-escalation"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "ambiguous_conditions",
+      "passed": false,
+      "errors": [
+        "routing_reason: expected 'clarify', got 'conversational_faq'"
+      ],
+      "observations": [
+        {
+          "agent": "AI_ORCHESTRATOR",
+          "skill": "common_phrases",
+          "routing_reason": "conversational_faq",
+          "escalated": false,
+          "rag_ids": [
+            "conversation-capabilities"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "ambiguous_paperwork",
+      "passed": false,
+      "errors": [
+        "agent: expected 'AI_ORCHESTRATOR', got 'SALES_AGENT'",
+        "routing_reason: expected 'clarify', got 'intent_match'"
+      ],
+      "observations": [
+        {
+          "agent": "SALES_AGENT",
+          "skill": "customer_faq",
+          "routing_reason": "intent_match",
+          "escalated": true,
+          "rag_ids": []
+        }
+      ]
+    },
+    {
+      "id": "off_scope_weather",
+      "passed": true,
+      "errors": [],
+      "observations": [
+        {
+          "agent": "AI_ORCHESTRATOR",
+          "skill": "common_phrases",
+          "routing_reason": "off_scope",
+          "escalated": false,
+          "rag_ids": [
+            "conversation-off-scope"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "illegal_request",
+      "passed": true,
+      "errors": [],
+      "observations": [
+        {
+          "agent": "AI_ORCHESTRATOR",
+          "skill": "safety_refusal",
+          "routing_reason": "safety_illegal",
+          "escalated": false,
+          "rag_ids": [
+            "conversation-safety-illegal"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "graph_failure",
+      "passed": true,
+      "errors": [],
+      "observations": [
+        {
+          "agent": "AI_ORCHESTRATOR",
+          "skill": "safe_fallback",
+          "escalated": true
+        }
+      ]
+    },
+    {
+      "id": "restart_session",
+      "passed": true,
+      "errors": [],
+      "observations": [
+        {
+          "agent": "SALES_AGENT",
+          "routing_reason": "session_continuity"
+        }
+      ]
+    }
+  ]
+}

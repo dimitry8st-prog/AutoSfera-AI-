@@ -26,6 +26,10 @@ def main() -> None:
             health = client.get("/health")
             health.raise_for_status()
             assert health.json()["version"] == "3.1.0-beta.1"
+            runtime = health.json()["runtime"]
+            assert runtime["build_sha"]
+            assert runtime["prompts"]["fingerprint"] not in {"missing", "empty"}
+            assert runtime["knowledge_base"]["fingerprint"] not in {"missing", "empty"}
 
             chat = client.post("/api/chat", json={"message": "Хочу подобрать кроссовер"})
             chat.raise_for_status()
