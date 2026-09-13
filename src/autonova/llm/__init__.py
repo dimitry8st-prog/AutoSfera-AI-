@@ -121,12 +121,12 @@ class OpenAILLMClient(LLMClient):
         return content.strip()
 
 
-def get_llm_client() -> LLMClient:
+def get_llm_client(model: str | None = None) -> LLMClient:
     settings = get_settings()
     mode = settings.llm_mode.lower().strip()
     if mode == "openai":
         logger.info("Using OpenAI LLM client")
-        return OpenAILLMClient()
+        return OpenAILLMClient(model=model)
     logger.info("Using Mock LLM client")
     return MockLLMClient()
 

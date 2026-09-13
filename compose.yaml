@@ -16,7 +16,12 @@ services:
     networks: [backend]
 
   api:
-    build: .
+    build:
+      context: .
+      args:
+        BUILD_SHA: ${BUILD_SHA:-local}
+        PROMPT_VERSION: ${PROMPT_VERSION:-2026-09-13-beta.1}
+        KNOWLEDGE_BASE_VERSION: ${KNOWLEDGE_BASE_VERSION:-auto}
     restart: unless-stopped
     depends_on:
       postgres:

@@ -187,14 +187,14 @@ def test_vehicle_selection_filters_sedan_and_budget(orchestrator: AIOrchestrator
     assert "Уточните бюджет, тип кузова" not in second.reply
 
 
-def test_vehicle_selection_informal_handoff_asks_for_contacts(orchestrator: AIOrchestrator):
+def test_vehicle_selection_explicit_handoff_routes_to_sales_manager(orchestrator: AIOrchestrator):
     first = orchestrator.handle_message("Ищу седан до 18000")
     second = orchestrator.handle_message("передай менеджеру", session_id=first.session_id)
-    assert second.agent == "SALES_AGENT"
-    assert second.skill == "vehicle_selection"
-    assert second.collected_fields.get("lead_requested") is True
-    assert "имя" in second.reply and "телефон" in second.reply
-    assert "Оформлю заявку менеджеру" in second.reply
+    assert second.agent == "AI_ORCHESTRATOR"
+    assert second.skill == "human_handoff"
+    assert second.escalated is True
+    assert second.escalation_target == "sales_manager"
+    assert second.model_route == "human"
     assert second.reply != first.reply
 
 

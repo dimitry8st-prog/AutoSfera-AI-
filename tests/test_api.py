@@ -24,6 +24,12 @@ def test_health_and_chat_flow(monkeypatch, tmp_path):
     assert health.status_code == 200
     body = health.json()
     assert body["status"] == "ok"
+    assert body["runtime"]["app_version"] == "3.1.0-beta.1"
+    assert body["runtime"]["build_sha"]
+    assert body["runtime"]["prompts"]["fingerprint"] not in {"missing", "empty"}
+    assert body["runtime"]["knowledge_base"]["version"] == "2026-09-13-beta.1"
+    assert body["runtime"]["knowledge_base"]["fingerprint"] not in {"missing", "empty"}
+    assert body["runtime"]["llm"]["mode"] == "mock"
     assert body["skills"] == 17
     assert body["agents"] == ["SALES_AGENT", "SUPPORT_AGENT", "SERVICE_AGENT", "EMPLOYEE_AGENT"]
     assert body["dealer_id"] == "main-salon"
@@ -46,6 +52,7 @@ def test_health_and_chat_flow(monkeypatch, tmp_path):
     ready = client.get("/ready")
     assert ready.status_code == 200
     assert ready.json()["database"]["backend"] == "sqlite"
+    assert ready.json()["runtime"]["rag_backend"] == "tfidf"
 
     skills = client.get("/api/skills").json()
     assert len(skills["skills"]) == 17
@@ -61,6 +68,9 @@ def test_health_and_chat_flow(monkeypatch, tmp_path):
     assert chat.status_code == 200
     data = chat.json()
     assert data["agent"] == "SALES_AGENT"
+    assert data["model_route"] == "simple_model"
+    assert data["model_tier"] == "simple"
+    assert data["routing_risk"] == "low"
     assert data["session_id"]
     assert data["reply"]
 

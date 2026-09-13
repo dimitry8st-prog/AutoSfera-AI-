@@ -29,6 +29,7 @@ from autonova.orchestrator import AIOrchestrator
 from autonova.skills import build_skill_registry
 from autonova.storage import build_store
 from autonova.research import dispatch_research_job
+from autonova.runtime_identity import runtime_identity
 
 logger = get_logger("autonova.api")
 bearer = HTTPBearer(auto_error=False)
@@ -77,6 +78,10 @@ class ChatResponse(BaseModel):
     action_id: str | None = None
     action_status: str | None = None
     routing_reason: str | None = None
+    model_route: str | None = None
+    model_tier: str | None = None
+    routing_intent: str | None = None
+    routing_risk: str | None = None
 
 
 class ResetRequest(BaseModel):
@@ -141,6 +146,7 @@ def create_app() -> FastAPI:
     settings = get_settings()
     setup_logging()
     frontend_dir = settings.frontend_dir
+    identity = runtime_identity(settings)
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI):
@@ -192,6 +198,7 @@ def create_app() -> FastAPI:
         return {
             "status": "ok",
             "version": settings.app_version,
+            "runtime": identity,
             "agents": list(orch.agents),
             "skills": len(build_skill_registry()),
             "kb_documents": len(orch.kb.documents),
@@ -234,7 +241,12 @@ def create_app() -> FastAPI:
                 status_code=503,
                 detail={"status": "not_ready", "database": database, "rag": rag},
             )
-        return {"status": "ready", "database": database, "rag": rag}
+        return {
+            "status": "ready",
+            "database": database,
+            "rag": rag,
+            "runtime": identity,
+        }
 
     @app.post("/api/auth/token")
     def login(body: LoginRequest) -> dict[str, Any]:
@@ -379,6 +391,10 @@ def create_app() -> FastAPI:
             action_id=action_id,
             action_status=action_status,
             routing_reason=result.routing_reason,
+            model_route=result.model_route,
+            model_tier=result.model_tier,
+            routing_intent=result.routing_intent,
+            routing_risk=result.routing_risk,
         )
 
     @app.post("/api/reset")
@@ -722,6 +738,10 @@ def create_app() -> FastAPI:
             rag_ids=result.rag_ids,
             collected_fields=result.collected_fields,
             routing_reason=result.routing_reason,
+            model_route=result.model_route,
+            model_tier=result.model_tier,
+            routing_intent=result.routing_intent,
+            routing_risk=result.routing_risk,
         )
 
     return app

@@ -19,7 +19,14 @@ class Settings(BaseSettings):
     )
 
     app_name: str = "AutoSfera AI"
-    app_version: str = "3.1.0-beta.1"
+    app_version: str = Field(default="3.1.0-beta.1", validation_alias="APP_VERSION")
+    build_sha: str = Field(default="local", validation_alias="BUILD_SHA")
+    prompt_version: str = Field(
+        default="2026-09-13-beta.1", validation_alias="PROMPT_VERSION"
+    )
+    knowledge_base_version: str = Field(
+        default="auto", validation_alias="KNOWLEDGE_BASE_VERSION"
+    )
     dealer_id: str = Field(default="main-salon", validation_alias="DEALER_ID")
     dealer_name: str = Field(default="AutoSfera Demo Salon", validation_alias="DEALER_NAME")
     database_path: Path = Field(
@@ -84,6 +91,8 @@ class Settings(BaseSettings):
         validation_alias="OPENAI_BASE_URL",
     )
     openai_model: str = Field(default="gpt-5.6", validation_alias="OPENAI_MODEL")
+    openai_simple_model: str = Field(default="", validation_alias="OPENAI_SIMPLE_MODEL")
+    openai_complex_model: str = Field(default="", validation_alias="OPENAI_COMPLEX_MODEL")
 
     rag_backend: str = Field(default="tfidf", validation_alias="RAG_BACKEND")
     rag_top_k: int = Field(default=6, validation_alias="RAG_TOP_K")
