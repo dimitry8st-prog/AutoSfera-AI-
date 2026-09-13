@@ -78,7 +78,9 @@ def test_health_and_chat_flow(monkeypatch, tmp_path):
     assert tg.json()["channel"] == "telegram"
 
     denied_employee = client.post("/api/chat", json={"message": "Найди внутренний регламент обработки лида"})
-    assert denied_employee.status_code == 403
+    assert denied_employee.status_code == 200
+    assert denied_employee.json()["agent"] == "AI_ORCHESTRATOR"
+    assert denied_employee.json()["skill"] == "staff_only"
     employee = client.post(
         "/api/chat",
         json={"message": "Найди внутренний регламент обработки лида"},
@@ -97,7 +99,7 @@ def test_health_and_chat_flow(monkeypatch, tmp_path):
     assert len(client.get("/api/requests", headers=staff_headers).json()["items"]) == 1
 
     analytics = client.get("/api/analytics/summary", headers=staff_headers).json()
-    assert analytics["conversations"] == 3
+    assert analytics["conversations"] == 4
     assert analytics["requests"] == 1
 
     feedback = client.post(

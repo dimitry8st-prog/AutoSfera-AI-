@@ -218,10 +218,21 @@ _BODY_ALIASES: tuple[tuple[str, str], ...] = (
 
 DEMO_USD_TO_RUB = 90
 DEMO_EUR_TO_RUB = 100
+_OFF_CATALOG_KEYS = (
+    "запчаст", "колес", "шины", "покрышк",
+    "аккумулятор", "колодк",
+)
+
+
+def _off_catalog_product(text: str) -> bool:
+    lowered = text.lower().replace("ё", "е")
+    return any(key in lowered for key in _OFF_CATALOG_KEYS)
 
 
 def _looks_like_vehicle_query(text: str) -> bool:
     lowered = text.lower().replace("ё", "е")
+    if _off_catalog_product(lowered):
+        return False
     return any(
         token in lowered
         for token in (
@@ -369,7 +380,25 @@ def _format_price(value: int) -> str:
 # --- Sales skills ---
 
 def vehicle_selection(message: str, chunks: list[RetrievedChunk], ctx: dict[str, Any]) -> SkillResult:
-    catalog_text = _catalog_blob(chunks, {**(ctx or {}), "message": message})
+    utterance = _last_user_utterance(message) or message
+    if _off_catalog_product(utterance):
+        kb = (ctx or {}).get("kb")
+        doc = kb.get("conversation-parts") if kb is not None else None
+        reply = (
+            doc.content.split("О:", 1)[-1].strip()
+            if doc and "О:" in doc.content
+            else (
+                "Розничных запчастей и колёс в демо-каталоге нет. "
+                "Могу подобрать автомобиль, записать на сервис или передать сотруднику."
+            )
+        )
+        return SkillResult(
+            "vehicle_selection",
+            reply,
+            rag_ids=[doc.id] if doc is not None else [],
+        )
+
+    catalog_text = _catalog_blob(chunks, {**(ctx or {}), "message": utterance})
     models = _parse_catalog_models(catalog_text)
     ids = [c.document.id for c in chunks if c.document.id == "sales-models"]
     if not ids and models:
@@ -475,6 +504,12 @@ def vehicle_selection(message: str, chunks: list[RetrievedChunk], ctx: dict[str,
         )
 
     lines = "\n".join(f"• {item['line']}." for item in models)
+    if not _looks_like_vehicle_query(utterance) and body is None and budget is None:
+        reply = (
+            "Похоже, это уже не подбор автомобиля. Могу показать каталог моделей, "
+            "подключить оформление сделки и документы либо сервис. Напишите, что нужно."
+        )
+        return SkillResult("vehicle_selection", reply, rag_ids=ids)
     reply = (
         "Помогу подобрать автомобиль. Актуальный демо-каталог AutoSfera:\n\n"
         f"{lines}\n\n"
@@ -898,7 +933,7 @@ def build_skill_registry() -> dict[str, Skill]:
             "Order Status",
             "SUPPORT_AGENT",
             "Статус заказа",
-            ("статус", "заказ", "ан-2024", "где мой", "где сейчас", "выдача", "машин"),
+            ("статус", "заказ", "ан-2024", "где мой", "где моя", "где сейчас", "выдача", "машин"),
             order_status,
         ),
         Skill(
@@ -906,7 +941,7 @@ def build_skill_registry() -> dict[str, Skill]:
             "Documentation Support",
             "SUPPORT_AGENT",
             "Помощь с документами",
-            ("документ", "паспорт", "инн", "справка"),
+            ("документ", "паспорт", "инн", "справка", "сделк", "договор", "оформлен"),
             documentation_support,
         ),
         Skill(

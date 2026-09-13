@@ -63,6 +63,39 @@ _CONVERSATIONAL_PHRASES: dict[str, frozenset[str]] = {
     "capabilities": frozenset({
         "что ты умеешь", "чем ты можешь помочь", "чем можешь помочь",
         "что можешь", "помоги", "помощь", "help",
+        "что вы умеете", "чем вы можете помочь", "что вы можете",
+    }),
+    "menu": frozenset({
+        "что у вас есть", "что есть у вас", "какие услуги",
+        "какие услуги у вас", "чем занимаетесь", "чем вы занимаетесь",
+        "что предлагаете", "что вы предлагаете", "с чем поможешь",
+        "с чем можете помочь", "какие темы", "меню",
+    }),
+    "hours": frozenset({
+        "режим работы", "часы работы", "график работы", "когда открыты",
+        "когда вы открыты", "до скольки работаете", "во сколько открыты",
+        "рабочее время",
+    }),
+    "contacts": frozenset({
+        "как связаться", "ваши контакты", "ваш телефон", "ваш адрес",
+        "где вы находитесь", "где находитесь", "контакт автосалона",
+        "телефон салона", "адрес салона",
+    }),
+    "human": frozenset({
+        "позови оператора", "позовите оператора", "живой человек",
+        "соедини с человеком", "соедините с человеком", "хочу человека",
+        "это не бот", "позовите сотрудника",
+        "подготовь обращение к сотруднику", "подготовьте обращение к сотруднику",
+        "подготовь обращение", "подготовьте обращение",
+        "обращение к сотруднику",
+    }),
+    "how_it_works": frozenset({
+        "как ты работаешь", "как вы работаете", "как это работает",
+        "как устроен ассистент", "что за сервис",
+    }),
+    "privacy": frozenset({
+        "мои данные", "персональные данные", "это конфиденциально",
+        "вы сохраняете данные", "конфиденциальность",
     }),
 }
 
@@ -73,7 +106,74 @@ _CONVERSATIONAL_DOCUMENTS = {
     "wellbeing": "conversation-wellbeing",
     "identity": "conversation-identity",
     "capabilities": "conversation-capabilities",
+    "menu": "conversation-menu",
+    "hours": "conversation-hours",
+    "contacts": "conversation-contacts",
+    "human": "conversation-human",
+    "how_it_works": "conversation-how-it-works",
+    "privacy": "conversation-privacy",
 }
+
+_SAFETY_DOCUMENTS = {
+    "illegal": "conversation-safety-illegal",
+    "abuse": "conversation-safety-abuse",
+}
+
+_ILLEGAL_TOPIC_KEYS = (
+    "оружие", "пистолет", "винтовк", "калашников", "ак-47", "ak-47",
+    "бомб", "взрывчат", "гранат", "самострел", "наркотик", "наркота",
+    "кокаин", "героин", "амфетамин", "мефедрон", "марихуан", "гашиш",
+    "экстази", "закладк", "спайс", "метадон", "как убить",
+)
+
+_PROFANITY_RE = re.compile(
+    r"(?<![а-яa-z0-9])("
+    r"бля(?:ть|дь)?|сука|суки|сучар\w*|хуй\w*|хуя\w*|хуе\w*|"
+    r"пизд\w*|ебан\w*|ёбан\w*|ебат\w*|ебл\w*|мудак\w*|мудил\w*|"
+    r"гондон\w*|пидор\w*|пидар\w*|чмо|залуп\w*|нахуй|похуй|охуе\w*|"
+    r"заеб\w*|fuck(?:ing)?|shit|asshole|bitch|cunt|dickhead"
+    r")(?![а-яa-z0-9])",
+    re.IGNORECASE,
+)
+
+_UNEXPECTED_TOPIC_KEYS = (
+    "погода", "курс акци", "крипто", "рецепт", "футбол", "кино",
+)
+
+_OFF_CATALOG_KEYS = (
+    "запчаст", "колес", "шины", "покрышк",
+    "аккумулятор", "колодк",
+)
+
+_VEHICLE_TOPIC_KEYS = (
+    "машин", "модель", "модел", "каталог", "кроссовер", "седан", "фургон",
+    "nova", "комплектац",
+)
+
+_BUDGET_TOPIC_KEYS = (
+    "доллар", "руб", "бюджет", "млн", "бакс", "евро", "цена", "стоим",
+)
+
+_CUSTOMER_HANDOFF_MARKERS = (
+    "обращение к сотруднику",
+    "обращение сотруднику",
+    "подготовь обращение",
+    "подготовьте обращение",
+    "передай сотруднику",
+    "передайте сотруднику",
+    "свяжите с сотрудником",
+    "свяжи с сотрудником",
+    "позвать сотрудника",
+    "позовите сотрудника",
+    "нужен сотрудник",
+    "хочу сотрудника",
+)
+
+_ORCHESTRATOR_COMPANY_FAQ_IDS = frozenset({
+    "company-contacts",
+    "company-overview",
+    "company-ai-disclosure",
+})
 
 
 def _normalize_conversational_phrase(message: str) -> str:
@@ -89,17 +189,73 @@ def _conversational_intent(message: str) -> str | None:
     return None
 
 
+def _safety_intent(message: str) -> str | None:
+    """Refuse illegal and abusive turns before any agent routing."""
+    lowered = message.lower().replace("ё", "е")
+    if _PROFANITY_RE.search(lowered):
+        return "abuse"
+    if any(key in lowered for key in _ILLEGAL_TOPIC_KEYS):
+        return "illegal"
+    return None
+
+
+def _off_catalog_product(message: str) -> bool:
+    lowered = message.lower().replace("ё", "е")
+    return any(key in lowered for key in _OFF_CATALOG_KEYS)
+
+
+def _unexpected_salon_topic(message: str) -> bool:
+    lowered = message.lower().replace("ё", "е")
+    return any(key in lowered for key in _UNEXPECTED_TOPIC_KEYS)
+
+
+def _off_scope_document_id(message: str) -> str | None:
+    if _off_catalog_product(message):
+        return "conversation-parts"
+    if _unexpected_salon_topic(message):
+        return "conversation-off-scope"
+    return None
+
+
+def _spoken_kb_reply(content: str) -> str:
+    """Show the answer side of a RAG Q/A card, not the canned question."""
+    match = re.search(r"(?:^|\s)О:\s*(.*)\Z", content.strip(), flags=re.DOTALL)
+    if match:
+        return match.group(1).strip()
+    return content.strip()
+
+
+def _budget_topic(message: str) -> bool:
+    lowered = message.lower().replace("ё", "е")
+    return any(key in lowered for key in _BUDGET_TOPIC_KEYS)
+
+
+def _vehicle_topic(message: str) -> bool:
+    lowered = message.lower().replace("ё", "е")
+    if _off_catalog_product(lowered):
+        return False
+    return any(key in lowered for key in _VEHICLE_TOPIC_KEYS)
+
+
+def _customer_staff_handoff(message: str) -> bool:
+    lowered = message.lower().replace("ё", "е")
+    return any(marker in lowered for marker in _CUSTOMER_HANDOFF_MARKERS)
+
+
 _AGENT_INTENT_KEYS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("EMPLOYEE_AGENT", (
-        "сотрудник", "внутренн", "регламент", "скрипт продаж", "эскалац",
+        "внутренн", "регламент", "скрипт продаж", "эскалац",
         "руководител", "отчёт", "отчет", "kpi", "конкурент", "исследуй",
         "анализ рынка",
     )),
     ("SALES_AGENT", (
         "купить", "кроссовер", "седан", "кредит", "лизинг", "trade",
-        "тест-драйв", "nova", "b2b", "юридическ",
+        "тест-драйв", "nova", "b2b", "юридическ", "модел", "каталог",
     )),
-    ("SUPPORT_AGENT", ("заказ", "ан-2024", "документ", "статус", "возврат", "инн")),
+    ("SUPPORT_AGENT", (
+        "заказ", "ан-2024", "документ", "статус", "возврат", "инн",
+        "сделк", "договор", "оформлен",
+    )),
     ("SERVICE_AGENT", (
         "гарант", "сервис", "ремонт", "масло", "диагност", "техобслуж",
         "обслуживан", "лкп",
@@ -107,15 +263,38 @@ _AGENT_INTENT_KEYS: tuple[tuple[str, tuple[str, ...]], ...] = (
 )
 
 
-def _explicit_agent_intent(message: str) -> str | None:
-    """Return an agent only when a message contains a clear domain signal."""
+def _explicit_agent_intent(message: str, skills: SkillRouter | None = None) -> str | None:
+    """Pick the strongest domain signal on this turn, including skill keywords."""
+    if _off_catalog_product(message):
+        return None
     lowered = message.lower()
+    hits: dict[str, float] = {agent: 0.0 for agent, _ in _AGENT_INTENT_KEYS}
     for agent, keys in _AGENT_INTENT_KEYS:
-        if any(key in lowered for key in keys):
-            return agent
+        hits[agent] = float(sum(1 for key in keys if key in lowered))
     if re.search(r"(?<![а-яa-z])то(?![а-яa-z])", lowered):
-        return "SERVICE_AGENT"
-    return None
+        hits["SERVICE_AGENT"] += 1.0
+    if skills is not None:
+        skill_best: dict[str, float] = {}
+        for skill in skills.registry.values():
+            score = float(skill.match_score(message))
+            if score > skill_best.get(skill.agent, 0.0):
+                skill_best[skill.agent] = score
+        for agent, score in skill_best.items():
+            # Internal skill keywords must not steal public client requests.
+            if agent == "EMPLOYEE_AGENT" and hits["EMPLOYEE_AGENT"] <= 0:
+                continue
+            hits[agent] = max(hits[agent], score)
+    ranked = sorted(hits.items(), key=lambda item: item[1], reverse=True)
+    best_agent, best_score = ranked[0]
+    if best_score <= 0:
+        return None
+    second = ranked[1][1] if len(ranked) > 1 else 0
+    if best_score == second:
+        tied = {agent for agent, score in hits.items() if score == best_score}
+        for agent in ("SALES_AGENT", "SUPPORT_AGENT", "SERVICE_AGENT", "EMPLOYEE_AGENT"):
+            if agent in tied:
+                return agent
+    return best_agent
 
 
 @dataclass
@@ -243,7 +422,11 @@ class AIOrchestrator:
             {"complete": END, "route": "route_agent"},
         )
         builder.add_edge("route_agent", "access_guard")
-        builder.add_edge("access_guard", "execute_agent")
+        builder.add_conditional_edges(
+            "access_guard",
+            self._graph_after_access,
+            {"complete": END, "execute": "execute_agent"},
+        )
         builder.add_edge("execute_agent", "persist_turn")
         builder.add_edge("persist_turn", END)
         return builder.compile()
@@ -251,7 +434,7 @@ class AIOrchestrator:
     def _graph_classify_conversation(
         self, state: OrchestratorGraphState
     ) -> OrchestratorGraphState:
-        result = self._handle_conversational_phrase(
+        result = self._handle_orchestrator_direct(
             state["message"], state["session"], state["dialogue"]
         )
         return {"result": result} if result is not None else {}
@@ -264,7 +447,7 @@ class AIOrchestrator:
 
     def _graph_route_agent(self, state: OrchestratorGraphState) -> OrchestratorGraphState:
         session = state["session"]
-        explicit_agent = _explicit_agent_intent(state["message"])
+        explicit_agent = _explicit_agent_intent(state["message"], self.skills)
         should_route = session.active_agent is None or (
             explicit_agent is not None and explicit_agent != session.active_agent
         )
@@ -291,13 +474,28 @@ class AIOrchestrator:
             "routing_reason": reason,
         }
 
+    @staticmethod
+    def _graph_after_access(
+        state: OrchestratorGraphState,
+    ) -> Literal["complete", "execute"]:
+        return "complete" if state.get("result") is not None else "execute"
+
     def _graph_access_guard(self, state: OrchestratorGraphState) -> OrchestratorGraphState:
         selected = state["selected_agent"]
         allowed_agents = state.get("allowed_agents")
         if allowed_agents is not None and selected not in allowed_agents:
             state["session"].active_agent = None
-            self._persist(state["session"])
-            raise PermissionError(f"agent {selected} requires an employee role")
+            denial = self._reply_from_orchestrator_document(
+                state["message"],
+                state["session"],
+                state["dialogue"],
+                "conversation-staff-only",
+                reason="staff_only",
+                skill="staff_only",
+            )
+            if denial is None:
+                raise PermissionError(f"agent {selected} requires an employee role")
+            return {"result": denial}
         return {}
 
     def _graph_execute_agent(self, state: OrchestratorGraphState) -> OrchestratorGraphState:
@@ -306,7 +504,7 @@ class AIOrchestrator:
         # internal graph state in the user-visible reply.
         if (
             state.get("routing_reason") == "session_continuity"
-            and _explicit_agent_intent(message) is None
+            and _explicit_agent_intent(message, self.skills) is None
             and len(_normalize_conversational_phrase(message).split()) <= 8
         ):
             previous_user_message = next(
@@ -387,33 +585,31 @@ class AIOrchestrator:
             routing_reason="graph_failure",
         )
 
-    def _handle_conversational_phrase(
+    def _orchestrator_faq_ids(self) -> set[str]:
+        ids = {document.id for document in self.kb.by_section("conversation")}
+        ids.update(_ORCHESTRATOR_COMPANY_FAQ_IDS)
+        return ids
+
+    def _reply_from_orchestrator_document(
         self,
         message: str,
         session: SessionState,
         dialogue: DialogueLogger,
+        document_id: str,
+        *,
+        reason: str,
+        skill: str,
     ) -> TurnResult | None:
-        intent = _conversational_intent(message)
-        if intent is None:
+        document = self.kb.get(document_id)
+        if document is None:
+            logger.warning("Orchestrator KB document %s is missing", document_id)
             return None
-
-        expected_id = _CONVERSATIONAL_DOCUMENTS[intent]
-        chunks = self.rag.retrieve(message, "ORCHESTRATOR", top_k=6, min_score=0.01)
-        matched = next((chunk for chunk in chunks if chunk.document.id == expected_id), None)
-        if matched is None:
-            logger.warning("Conversation KB document %s was not retrieved", expected_id)
-            return None
-
-        reply_text = matched.document.content.strip()
-        rag_ids = [matched.document.id]
-        dialogue.log_routing(
-            agent="AI_ORCHESTRATOR",
-            reason=f"conversational_{intent}",
-            greeting="",
-        )
+        reply_text = _spoken_kb_reply(document.content)
+        rag_ids = [document.id]
+        dialogue.log_routing(agent="AI_ORCHESTRATOR", reason=reason, greeting="")
         dialogue.log_agent_reply(
             agent="AI_ORCHESTRATOR",
-            skill="common_phrases",
+            skill=skill,
             reply=reply_text,
             escalated=False,
             rag_ids=rag_ids,
@@ -428,12 +624,105 @@ class AIOrchestrator:
             agent_label="AI Orchestrator",
             greeting=None,
             reply=reply_text,
-            skill="common_phrases",
+            skill=skill,
             escalated=False,
             escalation_target=None,
             rag_ids=rag_ids,
-            routing_reason=f"conversational_{intent}",
+            routing_reason=reason,
         )
+
+    def _handle_orchestrator_direct(
+        self,
+        message: str,
+        session: SessionState,
+        dialogue: DialogueLogger,
+    ) -> TurnResult | None:
+        safety = _safety_intent(message)
+        if safety is not None:
+            return self._reply_from_orchestrator_document(
+                message,
+                session,
+                dialogue,
+                _SAFETY_DOCUMENTS[safety],
+                reason=f"safety_{safety}",
+                skill="safety_refusal",
+            )
+
+        if _customer_staff_handoff(message):
+            return self._reply_from_orchestrator_document(
+                message,
+                session,
+                dialogue,
+                "conversation-human",
+                reason="conversational_human",
+                skill="common_phrases",
+            )
+
+        off_scope_id = _off_scope_document_id(message)
+        if off_scope_id is not None:
+            return self._reply_from_orchestrator_document(
+                message,
+                session,
+                dialogue,
+                off_scope_id,
+                reason="off_scope",
+                skill="common_phrases",
+            )
+
+        intent = _conversational_intent(message)
+        if intent is not None:
+            if intent == "menu" and session.active_agent == "SALES_AGENT":
+                return None
+            return self._reply_from_orchestrator_document(
+                message,
+                session,
+                dialogue,
+                _CONVERSATIONAL_DOCUMENTS[intent],
+                reason=f"conversational_{intent}",
+                skill="common_phrases",
+            )
+
+        if (
+            session.active_agent is not None
+            or _explicit_agent_intent(message, self.skills) is not None
+            or _vehicle_topic(message)
+            or _budget_topic(message)
+        ):
+            return None
+
+        chunks = self.rag.retrieve(message, "ORCHESTRATOR", top_k=6, min_score=0.08)
+        allowed = self._orchestrator_faq_ids()
+        matched = next((chunk for chunk in chunks if chunk.document.id in allowed), None)
+        if matched is None:
+            return None
+        skill = (
+            "safety_refusal"
+            if matched.document.id.startswith("conversation-safety-")
+            else "common_phrases"
+        )
+        reason = (
+            "safety_illegal"
+            if matched.document.id == "conversation-safety-illegal"
+            else "safety_abuse"
+            if matched.document.id == "conversation-safety-abuse"
+            else "conversational_faq"
+        )
+        return self._reply_from_orchestrator_document(
+            message,
+            session,
+            dialogue,
+            matched.document.id,
+            reason=reason,
+            skill=skill,
+        )
+
+    def _handle_conversational_phrase(
+        self,
+        message: str,
+        session: SessionState,
+        dialogue: DialogueLogger,
+    ) -> TurnResult | None:
+        return self._handle_orchestrator_direct(message, session, dialogue)
 
     def handle_message(
         self,
@@ -474,7 +763,7 @@ class AIOrchestrator:
         dialogue = DialogueLogger(session.session_id)
         dialogue.log_user_message(message, channel=channel)
 
-        conversational = self._handle_conversational_phrase(message, session, dialogue)
+        conversational = self._handle_orchestrator_direct(message, session, dialogue)
         if conversational is not None:
             return conversational
 
@@ -493,10 +782,18 @@ class AIOrchestrator:
             )
 
         if allowed_agents is not None and session.active_agent not in allowed_agents:
-            denied_agent = session.active_agent
             session.active_agent = None
-            self._persist(session)
-            raise PermissionError(f"agent {denied_agent} requires an employee role")
+            denial = self._reply_from_orchestrator_document(
+                message,
+                session,
+                dialogue,
+                "conversation-staff-only",
+                reason="staff_only",
+                skill="staff_only",
+            )
+            if denial is not None:
+                return denial
+            raise PermissionError("agent requires an employee role")
 
         agent = self.agents[session.active_agent]
         agent_reply: AgentReply = agent.handle(

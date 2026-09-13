@@ -40,6 +40,13 @@ def _section_boost(query: str, section: str) -> float:
     if any(token in q for token in ("политик", "безопасн", "игнорир", "персональн", "152")):
         if section in {"policies", "legal"}:
             return 1.36
+    if any(token in q for token in (
+        "оружие", "наркотик", "взрывчат", "пистолет", "оскорб", "нецензурн",
+    )):
+        if section == "conversation":
+            return 1.4
+        if section == "policies":
+            return 1.2
     if any(token in q for token in ("контакт", "связать", "телефон", "адрес", "email")):
         if section == "company":
             return 1.32
