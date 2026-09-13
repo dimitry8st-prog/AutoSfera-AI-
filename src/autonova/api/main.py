@@ -17,6 +17,7 @@ from pydantic import BaseModel, Field
 
 from autonova.agents import AGENT_META
 from autonova.action_gateway import can_approve, execute_action
+from autonova.beta import beta_readiness
 from autonova.auth import (
     Actor, create_token, decode_token, verify_action_webhook,
     verify_demo_credentials, verify_webhook,
@@ -55,9 +56,9 @@ def require_roles(*roles: str) -> Callable[..., Actor]:
 
 
 class ChatRequest(BaseModel):
-    message: str = Field(..., min_length=1)
-    session_id: str | None = None
-    channel: str = "web"
+    message: str = Field(..., min_length=1, max_length=4000)
+    session_id: str | None = Field(default=None, max_length=160)
+    channel: str = Field(default="web", pattern="^(web|telegram|whatsapp|email|crm)$")
 
 
 class ChatResponse(BaseModel):
@@ -79,17 +80,17 @@ class ChatResponse(BaseModel):
 
 
 class ResetRequest(BaseModel):
-    session_id: str
+    session_id: str = Field(..., min_length=4, max_length=160)
 
 
 class BusinessRequest(BaseModel):
     kind: str = Field(..., pattern="^(lead|test_drive|service)$")
-    customer_name: str | None = None
-    phone: str | None = None
-    vehicle: str | None = None
-    preferred_at: str | None = None
-    comment: str | None = None
-    source: str = "web"
+    customer_name: str | None = Field(default=None, max_length=160)
+    phone: str | None = Field(default=None, max_length=40)
+    vehicle: str | None = Field(default=None, max_length=240)
+    preferred_at: str | None = Field(default=None, max_length=80)
+    comment: str | None = Field(default=None, max_length=2000)
+    source: str = Field(default="web", max_length=80)
 
 
 class LoginRequest(BaseModel):
@@ -117,6 +118,12 @@ class ResearchReviewRequest(BaseModel):
 class ActionReviewRequest(BaseModel):
     decision: str = Field(..., pattern="^(approve|reject)$")
     note: str | None = Field(default=None, max_length=2000)
+
+
+class FeedbackRequest(BaseModel):
+    session_id: str = Field(..., min_length=4, max_length=160)
+    rating: int = Field(..., ge=1, le=5)
+    comment: str | None = Field(default=None, max_length=1000)
 
 
 @lru_cache
@@ -424,6 +431,34 @@ def create_app() -> FastAPI:
         actor: Actor = Depends(require_roles("admin", "sales", "service", "employee")),
     ) -> dict[str, Any]:
         return get_store().analytics(actor.dealer_id)
+
+    @app.post("/api/feedback")
+    def create_feedback(
+        body: FeedbackRequest,
+        actor: Actor = Depends(optional_actor),
+    ) -> dict[str, Any]:
+        item, created = get_store().record_feedback(
+            actor.dealer_id, body.session_id, body.rating, body.comment
+        )
+        return {"created": created, "feedback": item}
+
+    @app.get("/api/feedback/summary")
+    def feedback_summary(
+        actor: Actor = Depends(require_roles("admin", "sales", "service", "employee")),
+    ) -> dict[str, Any]:
+        analytics = get_store().analytics(actor.dealer_id)
+        return {
+            "dealer_id": actor.dealer_id,
+            "responses": analytics["csat_responses"],
+            "csat": analytics["csat"],
+            "target": 4.0,
+        }
+
+    @app.get("/api/beta/readiness")
+    def controlled_beta_readiness(
+        _actor: Actor = Depends(require_roles("admin", "employee")),
+    ) -> dict[str, Any]:
+        return beta_readiness(get_settings(), get_store(), get_orchestrator())
 
     @app.get("/api/actions")
     def list_actions(

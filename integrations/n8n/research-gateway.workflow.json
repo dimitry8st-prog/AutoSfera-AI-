@@ -1,0 +1,59 @@
+{
+  "id": "autosfera-research-gateway-beta",
+  "name": "AutoSfera Research Gateway (controlled beta)",
+  "nodes": [
+    {
+      "parameters": {"httpMethod": "POST", "path": "autosfera-research", "responseMode": "lastNode", "options": {"rawBody": true}},
+      "id": "8de88da0-1000-4000-8000-000000000001",
+      "name": "Signed Research Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [0, 0],
+      "webhookId": "autosfera-research"
+    },
+    {
+      "parameters": {"jsCode": "const crypto = require('crypto');\nconst secret = $env.RESEARCH_WEBHOOK_SECRET;\nif (!secret) throw new Error('RESEARCH_WEBHOOK_SECRET is not configured');\nconst signature = $json.headers?.['x-autosfera-signature'] || '';\nconst raw = typeof $json.body === 'string' ? $json.body : JSON.stringify($json.body);\nconst expected = crypto.createHmac('sha256', secret).update(raw).digest('hex');\nif (signature.length !== expected.length || !crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expected))) throw new Error('Invalid research signature');\nconst job = typeof $json.body === 'string' ? JSON.parse($json.body) : $json.body;\nfor (const key of ['job_id','dealer_id','actor','query','trace_id','idempotency_key']) if (!job[key]) throw new Error(`Missing ${key}`);\nif (job.query.length < 5 || job.query.length > 2000) throw new Error('Invalid query length');\nreturn [{json: job}];"},
+      "id": "8de88da0-1000-4000-8000-000000000002",
+      "name": "Verify and Validate",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [240, 0]
+    },
+    {
+      "parameters": {"method": "POST", "url": "={{ $env.LANGFLOW_RESEARCH_URL }}", "sendHeaders": true, "headerParameters": {"parameters": [{"name": "Content-Type", "value": "application/json"}, {"name": "x-api-key", "value": "={{ $env.LANGFLOW_API_KEY }}"}]}, "sendBody": true, "contentType": "raw", "rawContentType": "application/json", "body": "={{ JSON.stringify({ input_value: $json.query, tweaks: { autosfera: { dealer_id: $json.dealer_id, trace_id: $json.trace_id } } }) }}", "options": {"timeout": 15000}},
+      "id": "8de88da0-1000-4000-8000-000000000003",
+      "name": "Bounded Langflow Call",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [480, 0]
+    },
+    {
+      "parameters": {"jsCode": "const crypto = require('crypto');\nconst job = $('Verify and Validate').item.json;\nconst output = $json.outputs?.[0]?.outputs?.[0]?.results?.message?.text || $json.summary || '';\nif (!output) throw new Error('Langflow returned no summary');\nconst callback = {job_id: job.job_id, dealer_id: job.dealer_id, trace_id: job.trace_id, result: {title: `Исследование: ${job.query.slice(0, 100)}`, summary: String(output).slice(0, 30000)}, sources: Array.isArray($json.sources) && $json.sources.length ? $json.sources : [{title: 'Langflow research output', url: $env.RESEARCH_FALLBACK_SOURCE_URL}]};\nif (!callback.sources[0]?.url) throw new Error('At least one source URL is required');\nconst raw = JSON.stringify(callback);\nconst signature = crypto.createHmac('sha256', $env.RESEARCH_WEBHOOK_SECRET).update(raw).digest('hex');\nreturn [{json: {raw, signature}}];"},
+      "id": "8de88da0-1000-4000-8000-000000000004",
+      "name": "Validate and Sign Callback",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [720, 0]
+    },
+    {
+      "parameters": {"method": "POST", "url": "={{ $env.AUTOSFERA_API_URL + '/api/research/callback' }}", "sendHeaders": true, "headerParameters": {"parameters": [{"name": "Content-Type", "value": "application/json"}, {"name": "X-AutoSfera-Signature", "value": "={{ $json.signature }}"}]}, "sendBody": true, "contentType": "raw", "rawContentType": "application/json", "body": "={{ $json.raw }}", "options": {"timeout": 10000}},
+      "id": "8de88da0-1000-4000-8000-000000000005",
+      "name": "Return for Human Review",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [960, 0]
+    }
+  ],
+  "connections": {
+    "Signed Research Webhook": {"main": [[{"node": "Verify and Validate", "type": "main", "index": 0}]]},
+    "Verify and Validate": {"main": [[{"node": "Bounded Langflow Call", "type": "main", "index": 0}]]},
+    "Bounded Langflow Call": {"main": [[{"node": "Validate and Sign Callback", "type": "main", "index": 0}]]},
+    "Validate and Sign Callback": {"main": [[{"node": "Return for Human Review", "type": "main", "index": 0}]]}
+  },
+  "pinData": {},
+  "settings": {"executionOrder": "v1", "saveExecutionProgress": true, "executionTimeout": 60},
+  "active": false,
+  "versionId": "8de88da0-1000-4000-8000-000000000006",
+  "meta": {"templateCredsSetupCompleted": false},
+  "tags": []
+}

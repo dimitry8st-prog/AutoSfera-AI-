@@ -2,7 +2,7 @@
 
 Стек: Python 3.11+, FastAPI, LangGraph 1.2, JSON Knowledge Base, TF-IDF fallback или pgvector/HNSW RAG, Skills, PostgreSQL/SQLite (`dealer_id`), mock/OpenAI LLM.
 
-Версия платформы: **2.1.0**.
+Версия платформы: **3.1.0-beta.1**.
 
 ## Контуры доверия 2.1
 

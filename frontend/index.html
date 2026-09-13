@@ -28,7 +28,18 @@
         <div id="messages" class="messages" aria-live="polite"></div>
         <div class="composer">
           <div class="quick" id="quickReplies"><button type="button" data-q="Хочу купить кроссовер">Подобрать авто</button><button type="button" data-q="Статус заказа АН-2024-0512">Статус заказа</button><button type="button" data-q="Вопрос по гарантии на кузов">Гарантия</button><button type="button" data-q="Лизинг для юридических лиц на 5 авто">Лизинг B2B</button><button type="button" class="employee-only hidden" data-q="Исследуй конкурента и подготовь черновик">Конкурент</button></div>
-          <form id="chatForm"><input id="messageInput" type="text" placeholder="Напишите сообщение..." autocomplete="off" required /><button type="submit">Отправить</button></form>
+          <form id="chatForm"><input id="messageInput" type="text" maxlength="4000" placeholder="Напишите сообщение..." autocomplete="off" required /><button type="submit">Отправить</button></form>
+          <div id="feedbackPanel" class="feedback hidden" role="group" aria-label="Оценка ответа">
+            <span>Ответ был полезен?</span>
+            <div aria-label="Оценка от 1 до 5">
+              <button type="button" data-rating="1" aria-label="Оценка 1 из 5">1</button>
+              <button type="button" data-rating="2" aria-label="Оценка 2 из 5">2</button>
+              <button type="button" data-rating="3" aria-label="Оценка 3 из 5">3</button>
+              <button type="button" data-rating="4" aria-label="Оценка 4 из 5">4</button>
+              <button type="button" data-rating="5" aria-label="Оценка 5 из 5">5</button>
+            </div>
+            <span id="feedbackStatus" aria-live="polite"></span>
+          </div>
           <p class="disclaimer">Демонстрационный контур использует вымышленные данные. Важные решения подтверждает сотрудник.</p>
         </div>
       </div>

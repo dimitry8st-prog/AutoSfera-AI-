@@ -99,6 +99,14 @@ class KnowledgeBase:
         if not self.root.exists():
             raise FileNotFoundError(f"Knowledge base not found: {self.root}")
 
+        governance_path = self.root / "_governance.json"
+        governance = (
+            json.loads(governance_path.read_text(encoding="utf-8"))
+            if governance_path.exists()
+            else {}
+        )
+        metadata_defaults = governance.get("metadata_defaults", {})
+
         for path in sorted(self.root.rglob("*.json")):
             payload = json.loads(path.read_text(encoding="utf-8"))
             section = payload.get("section") or path.parent.name
@@ -111,7 +119,7 @@ class KnowledgeBase:
                         content=item["content"],
                         tags=tuple(item.get("tags", [])),
                         agent=item.get("agent"),
-                        metadata=item.get("metadata", {}),
+                        metadata={**metadata_defaults, **item.get("metadata", {})},
                     )
                 )
         self._documents = docs
@@ -184,6 +192,49 @@ class KnowledgeBase:
 
 _TOKEN_RE = re.compile(r"[a-zA-Zа-яА-ЯёЁ0-9\-]+", re.UNICODE)
 
+_STOP_WORDS = {
+    "а", "без", "бы", "в", "вам", "ваш", "где", "для", "до", "есть", "и", "из",
+    "или", "как", "какая", "какие", "какой", "ли", "мне", "можно", "мой", "мы", "на",
+    "не", "но", "о", "по", "при", "с", "сейчас", "свою", "то", "у", "что", "это",
+    "компания", "который", "нужен", "нужны", "хочу",
+}
+
+_SUFFIXES = (
+    "иями", "ями", "ами", "его", "ого", "ему", "ому", "ими", "ыми", "иях", "ах", "ях",
+    "ая", "яя", "ое", "ее", "ые", "ие", "ий", "ый", "ой", "ам", "ям", "ов", "ев",
+    "ом", "ем", "ую", "юю", "у", "ю", "а", "я", "ы", "и", "е", "о",
+)
+
+_SYNONYMS = {
+    "автомобил": ("машин", "авто"),
+    "машин": ("автомобил", "авто"),
+    "обмен": ("trade-in", "доплат"),
+    "доплат": ("trade-in", "обмен"),
+    "сдат": ("trade-in", "обмен"),
+    "связат": ("контакт", "телефон"),
+    "передат": ("эскалац", "руководител"),
+    "руководител": ("эскалац", "передат"),
+    "заказан": ("заказ", "статус"),
+    "корпоративн": ("b2b", "юридическ"),
+    "юридическ": ("b2b", "корпоративн"),
+}
+
+
+def _normalize_token(token: str) -> str:
+    token = token.lower().replace("ё", "е")
+    if token in _STOP_WORDS or len(token) <= 2:
+        return ""
+    for suffix in _SUFFIXES:
+        if len(token) - len(suffix) >= 4 and token.endswith(suffix):
+            token = token[:-len(suffix)]
+            break
+    return "" if token in _STOP_WORDS or token in {"компани"} else token
+
 
 def tokenize(text: str) -> list[str]:
-    return [t.lower() for t in _TOKEN_RE.findall(text)]
+    base = [_normalize_token(token) for token in _TOKEN_RE.findall(text)]
+    tokens = [token for token in base if token]
+    expanded = list(tokens)
+    for token in tokens:
+        expanded.extend(_SYNONYMS.get(token, ()))
+    return expanded

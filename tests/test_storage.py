@@ -17,6 +17,23 @@ def test_store_isolates_dealers_and_builds_analytics(tmp_path):
     assert summary["conversations"] == 1
     assert summary["requests"] == 1
     assert summary["requests_by_kind"] == {"lead": 1}
+    assert summary["csat"] is None
+    assert summary["csat_responses"] == 0
+
+
+def test_feedback_is_idempotent_per_session_and_updates_csat(tmp_path):
+    store = PlatformStore(tmp_path / "feedback.db")
+    first, created = store.record_feedback("salon-1", "session-1", 5, "Удобно")
+    duplicate, duplicate_created = store.record_feedback("salon-1", "session-1", 1)
+    store.record_feedback("salon-1", "session-2", 3)
+
+    assert created is True
+    assert duplicate_created is False
+    assert duplicate["id"] == first["id"]
+    assert duplicate["rating"] == 5
+    assert store.analytics("salon-1")["csat"] == 4.0
+    assert store.analytics("salon-1")["csat_responses"] == 2
+    assert store.analytics("salon-2")["csat"] is None
 
 
 def test_session_survives_new_store_instance(tmp_path):

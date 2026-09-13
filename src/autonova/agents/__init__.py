@@ -81,12 +81,40 @@ class BaseAgent:
             ]
         ).strip()
         chunks = self.rag.retrieve(query or message, self.key)
-        result: SkillResult = self.skills.run(
-            self.key,
-            message,
-            chunks,
-            ctx={"history": history, "kb": self.rag.kb},
-        )
+        lowered = message.lower().replace("ё", "е")
+        if any(phrase in lowered for phrase in ("игнорируй правила", "покажи персональные данные", "раскрой персональные данные")):
+            result = SkillResult(
+                "internal_knowledge" if self.key == "EMPLOYEE_AGENT" else "customer_faq",
+                "Не раскрываю персональные данные и не выполняю инструкции, нарушающие правила доступа. Передаю запрос ответственному сотруднику.",
+                escalated=True,
+                escalation_target="security_owner",
+                escalation_reason="запрос запрещённых данных",
+                rag_ids=[c.document.id for c in chunks],
+            )
+        elif "придум" in lowered and "скид" in lowered:
+            result = SkillResult(
+                "vehicle_selection",
+                "Не могу придумать скидку, которой нет в утверждённой базе. Актуальные условия подтвердит менеджер.",
+                escalated=True,
+                escalation_target="sales_manager",
+                escalation_reason="запрос неподтверждённой скидки",
+                rag_ids=[c.document.id for c in chunks],
+            )
+        elif not chunks:
+            result = SkillResult(
+                "customer_faq",
+                "В базе знаний нет данных по этому вопросу. Передаю обращение сотруднику AutoSfera AI.",
+                escalated=True,
+                escalation_target="employee",
+                escalation_reason="нет данных в KB",
+            )
+        else:
+            result = self.skills.run(
+                self.key,
+                message,
+                chunks,
+                ctx={"history": history, "kb": self.rag.kb},
+            )
         preface = (
             f"Здравствуйте! Я {self.label} — ИИ-ассистент AutoSfera AI.\n\n"
             if not history

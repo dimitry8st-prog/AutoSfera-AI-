@@ -414,6 +414,11 @@ class PostgresPlatformStore:
             by_kind = cur.fetchall()
             cur.execute("SELECT status, COUNT(*) AS total FROM requests WHERE dealer_id = %s GROUP BY status", (dealer_id,))
             by_status = cur.fetchall()
+            cur.execute(
+                "SELECT COUNT(*) AS total, AVG(rating) AS average FROM feedback WHERE dealer_id = %s",
+                (dealer_id,),
+            )
+            feedback = cur.fetchone()
         return {
             "dealer_id": dealer_id,
             "conversations": conversations,
@@ -421,4 +426,29 @@ class PostgresPlatformStore:
             "requests": requests,
             "requests_by_kind": {row["kind"]: row["total"] for row in by_kind},
             "requests_by_status": {row["status"]: row["total"] for row in by_status},
+            "csat_responses": feedback["total"],
+            "csat": round(float(feedback["average"]), 2) if feedback["average"] is not None else None,
         }
+
+    def record_feedback(
+        self, dealer_id: str, session_id: str, rating: int, comment: str | None = None
+    ) -> tuple[dict[str, Any], bool]:
+        feedback_id = str(uuid4())
+        now = self._now()
+        with self.connect() as db, db.cursor() as cur:
+            cur.execute(
+                """INSERT INTO feedback (id, dealer_id, session_id, rating, comment, created_at)
+                VALUES (%s, %s, %s, %s, %s, %s)
+                ON CONFLICT (dealer_id, session_id) DO NOTHING
+                RETURNING *""",
+                (feedback_id, dealer_id, session_id, rating, comment, now),
+            )
+            row = cur.fetchone()
+            created = row is not None
+            if row is None:
+                cur.execute(
+                    "SELECT * FROM feedback WHERE dealer_id = %s AND session_id = %s",
+                    (dealer_id, session_id),
+                )
+                row = cur.fetchone()
+        return self._row(row) or {}, created

@@ -11,7 +11,9 @@ Required workflow:
 5. Validate the Langflow output against `contracts/research-callback.schema.json`.
 6. POST the signed result to `/api/research/callback`.
 
-Recommended limits: three attempts with exponential delay, one logical callback, no secrets in an exported workflow. The exact n8n export is environment-specific and must be committed only after credentials are removed.
+`research-gateway.workflow.json` is the inactive, importable controlled-beta template. It verifies the API signature, calls Langflow with a bounded timeout, validates the minimum result and returns a signed callback for human review. Configure retries in n8n for the Langflow node (maximum three attempts with exponential delay). The API-side idempotency key prevents duplicate logical jobs.
+
+Required variables: `RESEARCH_WEBHOOK_SECRET`, `AUTOSFERA_API_URL`, `LANGFLOW_RESEARCH_URL`, `LANGFLOW_API_KEY`, `RESEARCH_FALLBACK_SOURCE_URL` and `NODE_FUNCTION_ALLOW_BUILTIN=crypto`. Do not activate it until the source URL and provider credentials use non-production test data.
 
 ## Action Gateway
 

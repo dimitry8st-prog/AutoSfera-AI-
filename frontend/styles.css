@@ -169,6 +169,12 @@ button.ghost { opacity: 0.9; }
   font-weight: 700;
 }
 .disclaimer { margin: 0.65rem 0 0; color: var(--muted); font-size: 0.75rem; }
+.feedback { display: flex; align-items: center; flex-wrap: wrap; gap: 0.55rem; margin-top: 0.7rem; color: var(--muted); font-size: 0.78rem; }
+.feedback.hidden { display: none; }
+.feedback > div { display: flex; gap: 0.3rem; }
+.feedback button { min-width: 2rem; padding: 0.3rem 0.5rem; }
+.feedback button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.feedback button:disabled { opacity: 0.55; cursor: default; }
 
 .kb-panel { padding: 1rem 1.1rem 1.4rem; overflow: auto; }
 .kb-panel.hidden { display: none; }
@@ -187,7 +193,7 @@ button.ghost { opacity: 0.9; }
 .kb-doc strong { color: var(--ink); display: block; margin-bottom: 0.2rem; }
 
 #managerView, #researchView { background: var(--panel); border: 1px solid var(--line); border-radius: 1rem; min-height: 70vh; overflow: hidden; }
-.metrics { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.8rem; padding: 1rem 1.2rem; }
+.metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 0.8rem; padding: 1rem 1.2rem; }
 .metrics article { border: 1px solid var(--line); border-radius: 0.8rem; padding: 1rem; background: rgba(255,255,255,0.035); }
 .metrics strong, .metrics span { display: block; }
 .metrics strong { color: var(--accent); font: 700 1.75rem "Space Grotesk", sans-serif; }

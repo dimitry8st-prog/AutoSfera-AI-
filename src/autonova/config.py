@@ -19,7 +19,7 @@ class Settings(BaseSettings):
     )
 
     app_name: str = "AutoSfera AI"
-    app_version: str = "2.1.0"
+    app_version: str = "3.1.0-beta.1"
     dealer_id: str = Field(default="main-salon", validation_alias="DEALER_ID")
     dealer_name: str = Field(default="AutoSfera Demo Salon", validation_alias="DEALER_NAME")
     database_path: Path = Field(

@@ -2,11 +2,11 @@
 
 > **Проект подготовлен для участия в OpenAI Build Week 2026 — глобальном хакатоне по созданию решений с Codex и GPT-5.6.**
 
-Коммерческий демо-пилот для одного автосалона с архитектурой, готовой к масштабированию на дилерскую сеть. Версия **2.1.0** добавляет роли, постоянные сессии, кабинет менеджера и защищённый контур исследований с обязательным подтверждением человеком.
+Контролируемая бета для одного автосалона с архитектурой, готовой к масштабированию на дилерскую сеть. Версия **3.1.0-beta.1** добавляет измерение CSAT, проверяемый допуск к бете и сохраняет обязательное подтверждение человеком для внешних действий.
 
 Ветка Platform Foundation добавляет собственную демо-CRM на PostgreSQL, Alembic-миграции, Docker Compose, readiness-проверку и проверяемые backup/restore. SQLite сохранён как автономный fallback для локальной разработки и unit-тестов.
 
-Актуальная спецификация пилота: [`docs/COMMERCIAL_PILOT.md`](docs/COMMERCIAL_PILOT.md).
+Актуальная спецификация пилота: [`docs/COMMERCIAL_PILOT.md`](docs/COMMERCIAL_PILOT.md). Матрица допуска: [`docs/BETA_READINESS.md`](docs/BETA_READINESS.md).
 
 ## Обновление от 10.09.2026 — Action Gateway
 
@@ -96,6 +96,7 @@
 | SQLite: диалоги и заявки по `dealer_id` | ✅ |
 | API заявок и аналитики | ✅ |
 | Веб-чат, quick replies, просмотр KB | ✅ |
+| UX-оценка 1–5 и показатель CSAT | ✅ |
 | Логирование (файл + JSONL сессий) | ✅ |
 | pytest-покрытие ядра, API и storage | ✅ |
 | Каналы Telegram / WhatsApp / Email / CRM | 🟡 каркас API без внешних Bot API |
@@ -104,6 +105,7 @@
 | Защищённый Job API n8n/Langflow + human approval | ✅ |
 | Action Gateway: lead / test drive / service → approve → execute → audit | ✅ (demo CRM), готов адаптер n8n |
 | Action Gateway observability without customer payloads in logs | ✅ |
+| Машиночитаемая проверка контролируемой беты | ✅ `/api/beta/readiness` |
 | Live CRM/DMS и подтверждённый production-запуск pgvector | ❌ вне демо-пилота |
 
 Соответствие пилоту: оркестратор, 4 агента, 17 Skills, KB, RAG, заявки, аналитика, роли, изоляция `dealer_id`, эскалации и Least Privilege.
@@ -200,7 +202,7 @@ uvicorn autonova.api.main:app --reload --app-dir src
 curl http://127.0.0.1:8000/health
 ```
 
-Ожидаемый ответ содержит `"status":"ok"`, четыре агента, `"skills":17`, `"version":"2.1.0"`, `dealer_id` и число документов KB.
+Ожидаемый ответ содержит `"status":"ok"`, четыре агента, `"skills":17`, `"version":"3.1.0-beta.1"`, `dealer_id` и число документов KB.
 
 Проверка готовности базы данных:
 
@@ -487,7 +489,7 @@ AutoSfera AI/
 ├── README.md
 ├── docs/COMMERCIAL_PILOT.md        # спецификация пилота 2.0
 ├── AutoSfera_MVP_Documentation.md   # архив учебного MVP 1.1
-├── pyproject.toml                  # пакет autonova 2.1.0
+├── pyproject.toml                  # пакет autonova 3.1.0 beta
 ├── .env.example
 ├── contracts/                      # JSON Schema для n8n/Langflow
 ├── integrations/                   # границы и правила n8n/Langflow
@@ -542,7 +544,7 @@ AutoSfera AI/
 
 ---
 
-*AutoSfera AI 2.1.0 — защищённый коммерческий демо-пилот. Демо-данные вымышлены.*
+*AutoSfera AI 3.1.0-beta.1 — контролируемая бета. Демо-данные вымышлены.*
 
 
 ---

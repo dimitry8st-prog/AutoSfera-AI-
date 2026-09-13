@@ -16,6 +16,15 @@ from autonova.logging import get_logger
 
 logger = get_logger("autonova.rag")
 
+_DOCUMENT_HINTS: dict[str, frozenset[str]] = {
+    "sales-models": frozenset({"кроссовер", "модел"}),
+    "support-return": frozenset({"возврат", "вернут", "вернуть"}),
+    "support-orders": frozenset({"заказан", "заказанн"}),
+    "company-contacts": frozenset({"связат", "связатьс", "контакт", "автосалон"}),
+    "internal-escalation": frozenset({"руководител", "эскалац"}),
+    "legal-152": frozenset({"персональн", "персональных", "152-фз"}),
+}
+
 
 @dataclass(frozen=True)
 class RetrievedChunk:
@@ -84,6 +93,7 @@ class RAGRetriever:
         min_score = min_score if min_score is not None else settings.rag_min_score
 
         query_vec = self._tfidf(tokenize(query))
+        query_tokens = set(tokenize(query))
         candidates = self.kb.for_agent(agent_key)
         # Prefer factual sections over scripts/policies when scores are close.
         section_boost = {
@@ -100,8 +110,17 @@ class RAGRetriever:
         }
         scored: list[RetrievedChunk] = []
         for doc in candidates:
-            doc_vec = self._tfidf(self._doc_tokens.get(doc.id, []))
+            doc_tokens = self._doc_tokens.get(doc.id, [])
+            doc_vec = self._tfidf(doc_tokens)
             score = self._cosine(query_vec, doc_vec) * section_boost.get(doc.section, 1.0)
+            tag_tokens = set(tokenize(" ".join(doc.tags)))
+            title_tokens = set(tokenize(doc.title))
+            denominator = max(len(query_tokens), 1)
+            score += 0.35 * len(query_tokens & tag_tokens) / denominator
+            score += 0.15 * len(query_tokens & title_tokens) / denominator
+            hints = _DOCUMENT_HINTS.get(doc.id, frozenset())
+            if query_tokens & hints:
+                score += 1.0
             if score >= min_score:
                 scored.append(RetrievedChunk(document=doc, score=score))
 

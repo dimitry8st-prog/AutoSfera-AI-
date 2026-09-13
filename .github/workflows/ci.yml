@@ -31,12 +31,15 @@ jobs:
           python -m json.tool contracts/research-callback.schema.json >/dev/null
           python -m json.tool contracts/action-job.schema.json >/dev/null
           python -m json.tool contracts/action-callback.schema.json >/dev/null
+          python -m json.tool contracts/feedback.schema.json >/dev/null
           python -m json.tool integrations/n8n/action-gateway.workflow.json >/dev/null
+          python -m json.tool integrations/n8n/research-gateway.workflow.json >/dev/null
       - name: Validate sandbox scripts
         run: |
           sh -n scripts/setup_n8n_sandbox.sh
           python -m py_compile scripts/smoke_action_gateway_n8n.py
-          python scripts/evaluate_rag.py --output-dir /tmp/autosfera-rag-eval
+          python scripts/smoke_beta.py
+          python scripts/evaluate_rag.py --enforce --output-dir /tmp/autosfera-rag-eval
       - name: Validate sandbox Compose
         env:
           POSTGRES_PASSWORD: ci-postgres-password
