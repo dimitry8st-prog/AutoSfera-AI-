@@ -61,9 +61,9 @@ def test_agent_section_access_least_privilege():
     assert any(d.agent == "ORCHESTRATOR" for d in kb.for_agent("ORCHESTRATOR"))
 
 
-def test_seventeen_skills_registered():
+def test_eighteen_skills_registered():
     registry = build_skill_registry()
-    assert len(registry) == 17
+    assert len(registry) == 18
     by_agent = {}
     for skill in registry.values():
         by_agent.setdefault(skill.agent, 0)
@@ -72,7 +72,7 @@ def test_seventeen_skills_registered():
         "SALES_AGENT": 4,
         "SUPPORT_AGENT": 4,
         "SERVICE_AGENT": 4,
-        "EMPLOYEE_AGENT": 5,
+        "EMPLOYEE_AGENT": 6,
     }
 
 
@@ -81,6 +81,24 @@ def test_competitor_research_is_employee_only():
     assert registry["competitor_research"].agent == "EMPLOYEE_AGENT"
     router = SkillRouter(registry)
     assert router.select("EMPLOYEE_AGENT", "Исследуй конкурента example.com").id == "competitor_research"
+
+
+def test_document_processing_is_employee_only_and_requires_approval():
+    registry = build_skill_registry()
+    skill = registry["document_processing"]
+    assert skill.agent == "EMPLOYEE_AGENT"
+    router = SkillRouter(registry)
+    selected = router.select("EMPLOYEE_AGENT", "Проверь документ перед добавлением в базу знаний")
+    assert selected.id == "document_processing"
+    result = selected.handler("Проверь документ", [], {})
+    assert result.metadata["human_approval"] is True
+    assert result.metadata["auto_publish"] is False
+
+
+def test_purchase_documents_route_to_support_instead_of_common_phrase(orchestrator):
+    result = orchestrator.handle_message("Какие документы нужны для покупки автомобиля?")
+    assert result.agent == "SUPPORT_AGENT"
+    assert result.skill == "documentation_support"
 
 
 def test_rag_retrieves_sales_model():

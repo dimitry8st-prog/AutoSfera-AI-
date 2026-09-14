@@ -18,3 +18,10 @@ TZ_extracted.txt
 .DS_Store
 Untitled
 .claude/
+
+# Готовое видео и промежуточные медиа публикуются вне Git-репозитория.
+demo/video-defense/**/*.mp3
+demo/video-defense/**/*.mp4
+demo/video-defense/captures/
+demo/video-defense/stills/
+demo/video-defense/vo/
