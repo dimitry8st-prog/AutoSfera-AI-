@@ -3,9 +3,9 @@ requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "autonova"
+name = "autosfera"
 version = "3.1.0b1"
-description = "AutoSfera AI — мультиагентная платформа для автодилера (пакет autonova)"
+description = "AutoSfera AI — мультиагентная платформа для автодилера (пакет autosfera)"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
@@ -28,7 +28,7 @@ dev = [
 ]
 
 [project.scripts]
-autonova = "autonova.api.main:run"
+autosfera = "autosfera.api.main:run"
 
 [tool.setuptools.packages.find]
 where = ["src"]
@@ -39,5 +39,5 @@ testpaths = ["tests"]
 pythonpath = ["src"]
 
 [tool.coverage.run]
-source = ["autonova"]
+source = ["autosfera"]
 omit = ["*/api/main.py"]

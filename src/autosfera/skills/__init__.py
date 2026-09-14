@@ -4,10 +4,10 @@ import re
 from dataclasses import dataclass, field
 from typing import Any, Callable
 
-from autonova.logging import get_logger
-from autonova.rag import RAGRetriever, RetrievedChunk
+from autosfera.logging import get_logger
+from autosfera.rag import RAGRetriever, RetrievedChunk
 
-logger = get_logger("autonova.skills")
+logger = get_logger("autosfera.skills")
 
 
 @dataclass
@@ -713,7 +713,13 @@ _KNOWN_ORDERS = {
 
 def order_status(message: str, chunks: list[RetrievedChunk], ctx: dict[str, Any]) -> SkillResult:
     order_id = _extract_order_id(message)
-    ids = [c.document.id for c in chunks]
+    picked = _pick_chunks(
+        chunks,
+        "order_status",
+        limit=1,
+        prefer_ids=("support-orders",),
+    )
+    ids = [c.document.id for c in picked]
     if not order_id:
         return SkillResult(
             "order_status",
@@ -740,7 +746,12 @@ def order_status(message: str, chunks: list[RetrievedChunk], ctx: dict[str, Any]
 
 
 def documentation_support(message: str, chunks: list[RetrievedChunk], ctx: dict[str, Any]) -> SkillResult:
-    text, ids, missing = _context_or_missing(chunks, "documentation_support")
+    text, ids, missing = _context_or_missing(
+        chunks,
+        "documentation_support",
+        limit=1,
+        prefer_ids=("support-documents",),
+    )
     if missing:
         return SkillResult(
             "documentation_support",
@@ -950,7 +961,10 @@ def build_skill_registry() -> dict[str, Skill]:
             "Order Status",
             "SUPPORT_AGENT",
             "Статус заказа",
-            ("статус", "заказ", "ан-2024", "где мой", "где моя", "где сейчас", "выдача", "машин"),
+            (
+                "статус", "ан-2024", "где мой заказ", "где моя машина",
+                "где сейчас заказ", "что с заказ", "заказ готов", "выдача",
+            ),
             order_status,
         ),
         Skill(
@@ -958,7 +972,7 @@ def build_skill_registry() -> dict[str, Skill]:
             "Documentation Support",
             "SUPPORT_AGENT",
             "Помощь с документами",
-            ("документ", "паспорт", "инн", "справка", "сделк", "договор", "оформлен"),
+            ("документ", "паспорт", "инн", "справка", "сделк", "договор", "оформ"),
             documentation_support,
         ),
         Skill(

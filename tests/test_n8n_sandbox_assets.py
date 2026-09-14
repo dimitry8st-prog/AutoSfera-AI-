@@ -4,7 +4,7 @@ import json
 import os
 from pathlib import Path
 
-from autonova.config import Settings
+from autosfera.config import Settings
 
 
 ROOT = Path(__file__).resolve().parents[1]

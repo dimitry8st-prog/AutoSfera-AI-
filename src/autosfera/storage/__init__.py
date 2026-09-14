@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any, Iterator
 from uuid import uuid4
 
-from autonova.config import get_settings
+from autosfera.config import get_settings
 
 
 class PlatformStore:
@@ -586,7 +586,7 @@ def build_store() -> Any:
     """Build the configured store without importing PostgreSQL dependencies in SQLite mode."""
     settings = get_settings()
     if settings.storage_backend == "postgresql":
-        from autonova.storage.postgres import PostgresPlatformStore
+        from autosfera.storage.postgres import PostgresPlatformStore
 
         return PostgresPlatformStore(
             settings.database_url,

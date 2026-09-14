@@ -75,8 +75,8 @@ def main() -> int:
         })
 
         from fastapi.testclient import TestClient
-        import autonova.api.main as api_main
-        from autonova.config import get_settings
+        import autosfera.api.main as api_main
+        from autosfera.config import get_settings
 
         get_settings.cache_clear()
         api_main.get_store.cache_clear()

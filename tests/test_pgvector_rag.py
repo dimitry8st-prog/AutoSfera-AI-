@@ -4,10 +4,10 @@ from pathlib import Path
 
 import pytest
 
-from autonova.config import get_settings
-from autonova.embeddings import DeterministicEmbeddingClient
-from autonova.knowledge import Document, KnowledgeBase
-from autonova.rag import PgVectorRAGRetriever, _vector_literal, chunk_document
+from autosfera.config import get_settings
+from autosfera.embeddings import DeterministicEmbeddingClient
+from autosfera.knowledge import Document, KnowledgeBase
+from autosfera.rag import PgVectorRAGRetriever, _vector_literal, chunk_document
 
 
 class FakeCursor:

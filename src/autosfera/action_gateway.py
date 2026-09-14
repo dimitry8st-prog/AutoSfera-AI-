@@ -7,12 +7,12 @@ from typing import Any
 
 import httpx
 
-from autonova.auth import sign_action_webhook
-from autonova.config import get_settings
-from autonova.logging import get_logger
+from autosfera.auth import sign_action_webhook
+from autosfera.config import get_settings
+from autosfera.logging import get_logger
 
 
-logger = get_logger("autonova.action_gateway")
+logger = get_logger("autosfera.action_gateway")
 ACTION_KINDS = frozenset({"lead", "test_drive", "service"})
 ACTION_TYPE_BY_KIND = {
     "lead": "create_lead",

@@ -7,18 +7,18 @@ from uuid import uuid4
 import httpx
 from fastapi.testclient import TestClient
 
-import autonova.api.main as api_main
-from autonova.action_gateway import (
+import autosfera.api.main as api_main
+from autosfera.action_gateway import (
     build_action_request,
     execute_action,
     validate_action_request,
 )
-from autonova.api.main import create_app
-from autonova.auth import sign_action_webhook
-from autonova.config import get_settings
-from autonova.llm import MockLLMClient
-from autonova.orchestrator import AIOrchestrator
-from autonova.storage import PlatformStore
+from autosfera.api.main import create_app
+from autosfera.auth import sign_action_webhook
+from autosfera.config import get_settings
+from autosfera.llm import MockLLMClient
+from autosfera.orchestrator import AIOrchestrator
+from autosfera.storage import PlatformStore
 
 
 def _action(store: PlatformStore, *, kind: str = "test_drive") -> dict:
@@ -262,7 +262,7 @@ def test_n8n_dispatch_sends_action_request_v1(monkeypatch, tmp_path) -> None:
         captured["body"] = json.loads(content)
         return _Response()
 
-    monkeypatch.setattr("autonova.action_gateway.httpx.post", fake_post)
+    monkeypatch.setattr("autosfera.action_gateway.httpx.post", fake_post)
     dispatched = execute_action(store, "main-salon", action["id"])
     body = captured["body"]
     assert dispatched["status"] == "running"
@@ -292,7 +292,7 @@ def test_n8n_failure_is_bounded_and_retryable(monkeypatch, tmp_path) -> None:
     def unavailable(*args, **kwargs):
         raise ConnectionError("offline")
 
-    monkeypatch.setattr("autonova.action_gateway.httpx.post", unavailable)
+    monkeypatch.setattr("autosfera.action_gateway.httpx.post", unavailable)
     failed = execute_action(store, "main-salon", action["id"])
     assert failed["status"] == "failed"
     assert failed["error"] == "dispatch_failed: ConnectionError"
@@ -326,7 +326,7 @@ def test_timeout_is_unknown_and_late_callback_can_complete(monkeypatch, tmp_path
     def timeout(*args, **kwargs):
         raise httpx.ReadTimeout("outcome unknown")
 
-    monkeypatch.setattr("autonova.action_gateway.httpx.post", timeout)
+    monkeypatch.setattr("autosfera.action_gateway.httpx.post", timeout)
     unknown = execute_action(store, "main-salon", action["id"])
     assert unknown["status"] == "delivery_unknown"
     assert store.retry_action_job("main-salon", action["id"], "sales")[1] is False
@@ -349,7 +349,7 @@ def test_action_logs_lifecycle_without_personal_payload(caplog, tmp_path) -> Non
     store = PlatformStore(tmp_path / "logging.db")
     action = _action(store)
     store.review_action_job("main-salon", action["id"], "approve", "sales")
-    with caplog.at_level(logging.INFO, logger="autonova.action_gateway"):
+    with caplog.at_level(logging.INFO, logger="autosfera.action_gateway"):
         execute_action(store, "main-salon", action["id"])
     text = caplog.text
     assert "action_dispatch_started" in text

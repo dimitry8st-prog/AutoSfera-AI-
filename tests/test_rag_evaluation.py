@@ -2,9 +2,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from autonova.evaluation import EvaluationCase, apply_gates, evaluate, load_cases, markdown_report
-from autonova.knowledge import Document
-from autonova.rag import RetrievedChunk
+from autosfera.evaluation import EvaluationCase, apply_gates, evaluate, load_cases, markdown_report
+from autosfera.knowledge import Document
+from autosfera.rag import RetrievedChunk
 
 
 class FakeKnowledgeBase:

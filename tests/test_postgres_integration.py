@@ -5,7 +5,7 @@ from uuid import uuid4
 
 import pytest
 
-from autonova.storage.postgres import PostgresPlatformStore
+from autosfera.storage.postgres import PostgresPlatformStore
 
 
 DATABASE_URL = os.getenv("TEST_DATABASE_URL")

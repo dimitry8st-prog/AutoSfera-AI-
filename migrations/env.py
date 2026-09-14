@@ -5,7 +5,7 @@ from logging.config import fileConfig
 from alembic import context
 from sqlalchemy import engine_from_config, pool
 
-from autonova.config import get_settings
+from autosfera.config import get_settings
 
 
 config = context.config

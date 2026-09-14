@@ -1,4 +1,4 @@
-from autonova.storage import PlatformStore
+from autosfera.storage import PlatformStore
 
 
 def test_store_isolates_dealers_and_builds_analytics(tmp_path):

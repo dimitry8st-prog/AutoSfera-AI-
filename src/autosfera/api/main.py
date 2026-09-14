@@ -15,23 +15,23 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from autonova.agents import AGENT_META
-from autonova.action_gateway import can_approve, execute_action
-from autonova.beta import beta_readiness
-from autonova.auth import (
+from autosfera.agents import AGENT_META
+from autosfera.action_gateway import can_approve, execute_action
+from autosfera.beta import beta_readiness
+from autosfera.auth import (
     Actor, create_token, decode_token, verify_action_webhook,
     verify_demo_credentials, verify_webhook,
 )
-from autonova.channels import build_channels
-from autonova.config import get_settings
-from autonova.logging import get_logger, setup_logging
-from autonova.orchestrator import AIOrchestrator
-from autonova.skills import build_skill_registry
-from autonova.storage import build_store
-from autonova.research import dispatch_research_job
-from autonova.runtime_identity import runtime_identity
+from autosfera.channels import build_channels
+from autosfera.config import get_settings
+from autosfera.logging import get_logger, setup_logging
+from autosfera.orchestrator import AIOrchestrator
+from autosfera.skills import build_skill_registry
+from autosfera.storage import build_store
+from autosfera.research import dispatch_research_job
+from autosfera.runtime_identity import runtime_identity
 
-logger = get_logger("autonova.api")
+logger = get_logger("autosfera.api")
 bearer = HTTPBearer(auto_error=False)
 
 
@@ -753,7 +753,7 @@ app = create_app()
 def run() -> None:
     import uvicorn
 
-    uvicorn.run("autonova.api.main:app", host="127.0.0.1", port=8000, reload=False)
+    uvicorn.run("autosfera.api.main:app", host="127.0.0.1", port=8000, reload=False)
 
 
 if __name__ == "__main__":

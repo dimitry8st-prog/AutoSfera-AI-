@@ -5,7 +5,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from autonova.config import Settings
+from autosfera.config import Settings
 
 
 def _tree_fingerprint(root: Path, suffixes: tuple[str, ...]) -> str:

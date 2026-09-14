@@ -6,9 +6,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from autonova.agents import build_agents
-from autonova.knowledge import SECTION_ACCESS
-from autonova.skills import SkillRouter, build_skill_registry
+from autosfera.agents import build_agents
+from autosfera.knowledge import SECTION_ACCESS
+from autosfera.skills import SkillRouter, build_skill_registry
 
 
 ALLOWED_CATEGORIES = {"typical", "edge", "out_of_kb", "adversarial"}

@@ -2,16 +2,16 @@ from __future__ import annotations
 
 from fastapi.testclient import TestClient
 
-from autonova.api.main import create_app
-from autonova.llm import MockLLMClient
-from autonova.orchestrator import AIOrchestrator
-from autonova.storage import PlatformStore
+from autosfera.api.main import create_app
+from autosfera.llm import MockLLMClient
+from autosfera.orchestrator import AIOrchestrator
+from autosfera.storage import PlatformStore
 
 
 def test_health_and_chat_flow(monkeypatch, tmp_path):
     app = create_app()
     # Ensure deterministic orchestrator
-    import autonova.api.main as api_main
+    import autosfera.api.main as api_main
 
     api_main.get_orchestrator.cache_clear()
     orch = AIOrchestrator(llm=MockLLMClient())

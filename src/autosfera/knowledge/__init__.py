@@ -6,10 +6,10 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from autonova.config import get_settings
-from autonova.logging import get_logger
+from autosfera.config import get_settings
+from autosfera.logging import get_logger
 
-logger = get_logger("autonova.knowledge")
+logger = get_logger("autosfera.knowledge")
 
 
 @dataclass(frozen=True)
@@ -255,6 +255,10 @@ _SYNONYMS: dict[str, tuple[str, ...]] = {
     "заказанн": ("заказ",),
     "заказанная": ("заказ",),
     "заказа": ("заказ",),
+    "оформим": ("оформлен", "оформление", "документ", "договор"),
+    "оформить": ("оформлен", "оформление", "документ", "договор"),
+    "оформляю": ("оформлен", "оформление", "документ", "договор"),
+    "оформление": ("документ", "договор", "сделк"),
     "связаться": ("контакт", "телефон", "автосалон"),
     "связ": ("контакт", "телефон"),
     "автосалон": ("контакт", "салон"),

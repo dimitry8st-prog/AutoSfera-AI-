@@ -30,7 +30,7 @@
   frontend/  →  POST /api/chat
         │
         ▼
-  FastAPI (src/autonova/api)
+  FastAPI (src/autosfera/api)
         │
         ▼
   LangGraph Orchestrator
@@ -74,7 +74,7 @@
 
 - PostgreSQL в контейнерном/боевом контуре; SQLite — локальный резервный режим
 - активный агент и история LangGraph-сессии сохраняются с изоляцией по `dealer_id`
-- `logs/autonova.log` — приложение
+- `logs/autosfera.log` — приложение
 - `logs/dialogues.log` — диалоги
 - `data/dialogues/<session_id>.jsonl` — события сессии
 

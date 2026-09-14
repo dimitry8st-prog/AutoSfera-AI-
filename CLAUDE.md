@@ -4,9 +4,9 @@ Guidance for working in this repository.
 
 ## Repository purpose
 
-**AutoSfera AI** is a commercial MVP multi-agent platform for a single car dealership (Python package name remains `autonova` for compatibility). Stack: Python 3.11+, FastAPI, JSON Knowledge Base, TF-IDF RAG, SQLite storage, mock/OpenAI LLM, web chat.
+**AutoSfera AI** is a commercial MVP multi-agent platform for a single car dealership. The Python package is `autosfera`. Stack: Python 3.11+, FastAPI, JSON Knowledge Base, TF-IDF RAG, SQLite storage, mock/OpenAI LLM, web chat.
 
-Public product name: AutoSfera AI. Technical package: `autonova`.
+Public product name: AutoSfera AI. Technical package: `autosfera`.
 
 ## What the system does
 
@@ -28,7 +28,7 @@ Agents and skills (16 total):
 ## Key behavioral rules
 
 - **No fabrication.** Answers must come from the Knowledge Base / skills; otherwise escalate or say data is missing.
-- **Least Privilege.** Each agent only sees allowed KB sections (`SECTION_ACCESS` in `src/autonova/knowledge/`).
+- **Least Privilege.** Each agent only sees allowed KB sections (`SECTION_ACCESS` in `src/autosfera/knowledge/`).
 - **Dealer isolation.** Every stored conversation and request includes `dealer_id` (pilot default: `main-salon`).
 - **Safe defaults.** `LLM_MODE=mock` works offline without an API key.
 - **No side effects beyond the app.** Do not invent live CRM, real payments, or confirmed warranty cases.
@@ -38,10 +38,10 @@ Agents and skills (16 total):
 ```bash
 python -m pip install -e ".[dev]"
 pytest -q
-uvicorn autonova.api.main:app --reload --app-dir src
+uvicorn autosfera.api.main:app --reload --app-dir src
 ```
 
-- Entrypoint: `src/autonova/api/main.py`
+- Entrypoint: `src/autosfera/api/main.py`
 - Prompts: `prompts/`
 - KB: `knowledge_base/`
 - Spec: `docs/COMMERCIAL_PILOT.md`, architecture: `docs/ARCHITECTURE.md`

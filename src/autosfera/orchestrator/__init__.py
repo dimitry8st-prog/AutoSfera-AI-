@@ -7,16 +7,16 @@ from uuid import uuid4
 
 from langgraph.graph import END, START, StateGraph
 
-from autonova.agents import AGENT_META, AgentReply, BaseAgent, build_agents, load_prompt
-from autonova.knowledge import KnowledgeBase
-from autonova.llm import LLMClient, extract_json_object, get_llm_client
-from autonova.logging import DialogueLogger, get_logger, setup_logging
-from autonova.model_router import ModelRouter, RouterDecision
-from autonova.rag import RAGRetriever, build_retriever
-from autonova.skills import SkillRouter, build_skill_registry
-from autonova.config import get_settings
+from autosfera.agents import AGENT_META, AgentReply, BaseAgent, build_agents, load_prompt
+from autosfera.knowledge import KnowledgeBase
+from autosfera.llm import LLMClient, extract_json_object, get_llm_client
+from autosfera.logging import DialogueLogger, get_logger, setup_logging
+from autosfera.model_router import ModelRouter, RouterDecision
+from autosfera.rag import RAGRetriever, build_retriever
+from autosfera.skills import SkillRouter, build_skill_registry
+from autosfera.config import get_settings
 
-logger = get_logger("autonova.orchestrator")
+logger = get_logger("autosfera.orchestrator")
 
 GRAPH_NODES = (
     "classify_conversation",
@@ -140,6 +140,7 @@ _PROFANITY_RE = re.compile(
 
 _UNEXPECTED_TOPIC_KEYS = (
     "погода", "курс акци", "крипто", "рецепт", "футбол", "кино",
+    "танк", "тану", "бронетехник",
 )
 
 _OFF_CATALOG_KEYS = (
@@ -253,11 +254,12 @@ _AGENT_INTENT_KEYS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("SALES_AGENT", (
         "купить", "кроссовер", "седан", "кредит", "лизинг", "trade",
         "тест-драйв", "nova", "b2b", "юридическ", "модел", "каталог",
-        "условия покуп", "вариант оплат", "приобретени",
+        "условия покуп", "вариант оплат", "приобретени", "машин",
+        "автомобил",
     )),
     ("SUPPORT_AGENT", (
         "заказ", "ан-2024", "документ", "статус", "возврат", "инн",
-        "сделк", "договор", "оформлен",
+        "сделк", "договор", "оформ",
     )),
     ("SERVICE_AGENT", (
         "гарант", "сервис", "ремонт", "масло", "диагност", "техобслуж",
@@ -532,16 +534,26 @@ class AIOrchestrator:
         # internal graph state in the user-visible reply.
         if (
             state.get("routing_reason") == "session_continuity"
-            and _explicit_agent_intent(message, self.skills) is None
+            and (
+                _explicit_agent_intent(message, self.skills) is None
+                or (_budget_topic(message) and not _vehicle_topic(message))
+            )
             and len(_normalize_conversational_phrase(message).split()) <= 8
         ):
+            prior_user_messages = [
+                item["content"]
+                for item in reversed(state["session"].history)
+                if item.get("role") == "user" and item.get("content")
+            ]
             previous_user_message = next(
                 (
-                    item["content"]
-                    for item in reversed(state["session"].history)
-                    if item.get("role") == "user"
+                    content
+                    for content in prior_user_messages
+                    if _explicit_agent_intent(content, self.skills)
+                    == state["selected_agent"]
+                    and not (_budget_topic(content) and not _vehicle_topic(content))
                 ),
-                "",
+                prior_user_messages[0] if prior_user_messages else "",
             )
             if previous_user_message:
                 message = f"{previous_user_message}\nУточнение пользователя: {message}"

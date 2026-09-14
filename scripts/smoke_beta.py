@@ -15,8 +15,8 @@ def main() -> None:
         os.environ["DIALOGUES_DIR"] = str(Path(tmp) / "dialogues")
 
         from fastapi.testclient import TestClient
-        from autonova.api.main import create_app, get_orchestrator, get_store
-        from autonova.config import get_settings
+        from autosfera.api.main import create_app, get_orchestrator, get_store
+        from autosfera.config import get_settings
 
         get_settings.cache_clear()
         get_store.cache_clear()

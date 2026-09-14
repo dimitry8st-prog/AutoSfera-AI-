@@ -2,10 +2,10 @@ from __future__ import annotations
 
 from fastapi.testclient import TestClient
 
-import autonova.api.main as api_main
-from autonova.api.main import create_app
-from autonova.config import Settings, get_settings
-from autonova.storage import PlatformStore, build_store
+import autosfera.api.main as api_main
+from autosfera.api.main import create_app
+from autosfera.config import Settings, get_settings
+from autosfera.storage import PlatformStore, build_store
 
 
 def test_settings_select_storage_backend() -> None:

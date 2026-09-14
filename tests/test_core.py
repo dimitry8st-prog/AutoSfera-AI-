@@ -5,19 +5,19 @@ from pathlib import Path
 
 import pytest
 
-from autonova.knowledge import KnowledgeBase, SECTION_ACCESS
-from autonova.llm import MockLLMClient, extract_json_object
-from autonova.logging import DialogueLogger, setup_logging
-from autonova.orchestrator import AIOrchestrator
-from autonova.rag import RAGRetriever
-from autonova.skills import SkillRouter, build_skill_registry, _extract_budget
-from autonova.storage import PlatformStore
+from autosfera.knowledge import KnowledgeBase, SECTION_ACCESS
+from autosfera.llm import MockLLMClient, extract_json_object
+from autosfera.logging import DialogueLogger, setup_logging
+from autosfera.orchestrator import AIOrchestrator
+from autosfera.rag import RAGRetriever
+from autosfera.skills import SkillRouter, build_skill_registry, _extract_budget
+from autosfera.storage import PlatformStore
 
 
 @pytest.fixture()
 def orchestrator(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> AIOrchestrator:
     setup_logging("INFO")
-    monkeypatch.setenv("AUTONOVA_LLM_MODE", "mock")
+    monkeypatch.setenv("autosfera_LLM_MODE", "mock")
     logs = tmp_path / "logs"
     dialogues = tmp_path / "dialogues"
     logs.mkdir()
@@ -452,6 +452,85 @@ def test_langgraph_switches_agent_when_topic_changes(orchestrator: AIOrchestrato
     assert orchestrator.sessions[first.session_id].active_agent == "SERVICE_AGENT"
 
 
+def test_missing_order_does_not_capture_vehicle_topic(orchestrator: AIOrchestrator):
+    first = orchestrator.handle_message("Статус заказа АН-2024-1234")
+    second = orchestrator.handle_message(
+        "Предложите машину",
+        session_id=first.session_id,
+    )
+    assert first.agent == "SUPPORT_AGENT"
+    assert first.escalated is True
+    assert second.agent == "SALES_AGENT"
+    assert second.skill == "vehicle_selection"
+    assert second.routing_reason == "topic_switch"
+    assert "номер заказа" not in second.reply.lower()
+
+
+def test_tank_question_is_off_scope_after_order_lookup(orchestrator: AIOrchestrator):
+    first = orchestrator.handle_message("Статус заказа АН-2024-1234")
+    second = orchestrator.handle_message("Продай танк", session_id=first.session_id)
+    third = orchestrator.handle_message("А танки у вас есть", session_id=first.session_id)
+    assert second.agent == "AI_ORCHESTRATOR"
+    assert second.routing_reason == "off_scope"
+    assert second.rag_ids == ["conversation-off-scope"]
+    assert third.agent == "AI_ORCHESTRATOR"
+    assert third.routing_reason == "off_scope"
+    assert "номер заказа" not in third.reply.lower()
+
+
+def test_order_creation_uses_documentation_then_switches_to_sales(
+    orchestrator: AIOrchestrator,
+):
+    first = orchestrator.handle_message("Давайте оформим заказ")
+    second = orchestrator.handle_message(
+        "Предложите машину",
+        session_id=first.session_id,
+    )
+    assert first.agent == "SUPPORT_AGENT"
+    assert first.skill == "documentation_support"
+    assert "номер заказа" not in first.reply.lower()
+    assert second.agent == "SALES_AGENT"
+    assert second.skill == "vehicle_selection"
+    assert second.routing_reason == "topic_switch"
+
+
+def test_agents_do_not_stick_across_repeated_topic_switches(
+    orchestrator: AIOrchestrator,
+):
+    turns = (
+        ("Предложите машину", "SALES_AGENT", "vehicle_selection", "sales-models"),
+        ("Статус заказа АН-2024-0512", "SUPPORT_AGENT", "order_status", "support-orders"),
+        ("Вопрос по гарантии на кузов", "SERVICE_AGENT", "warranty_consultation", "service-warranty"),
+        ("Подберите седан", "SALES_AGENT", "vehicle_selection", "sales-models"),
+    )
+    session_id = None
+    for index, (message, agent, skill, source_id) in enumerate(turns):
+        result = orchestrator.handle_message(message, session_id=session_id)
+        session_id = result.session_id
+        assert result.agent == agent
+        assert result.skill == skill
+        assert source_id in result.rag_ids
+        if index:
+            assert result.routing_reason == "topic_switch"
+
+
+def test_support_skills_switch_without_irrelevant_order_context(
+    orchestrator: AIOrchestrator,
+):
+    first = orchestrator.handle_message("Статус заказа АН-2024-0512")
+    second = orchestrator.handle_message(
+        "Какие документы нужны для покупки?",
+        session_id=first.session_id,
+    )
+    assert first.skill == "order_status"
+    assert first.rag_ids == ["support-orders"]
+    assert second.agent == "SUPPORT_AGENT"
+    assert second.skill == "documentation_support"
+    assert second.rag_ids == ["support-documents"]
+    assert "паспорт" in second.reply.lower()
+    assert "статус" not in second.reply.lower()
+
+
 def test_langgraph_keeps_short_follow_up_with_current_agent(orchestrator: AIOrchestrator):
     first = orchestrator.handle_message("Вопрос по гарантии на кузов")
     second = orchestrator.handle_message("А какой срок?", session_id=first.session_id)
@@ -561,7 +640,7 @@ def test_unknown_order_escalates(orchestrator: AIOrchestrator):
 
 
 def test_dialogue_logger_writes_jsonl(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
-    from autonova.config import get_settings
+    from autosfera.config import get_settings
 
     get_settings.cache_clear()
     monkeypatch.setenv("DIALOGUES_DIR", str(tmp_path))
@@ -578,7 +657,7 @@ def test_dialogue_logger_writes_jsonl(tmp_path: Path, monkeypatch: pytest.Monkey
 
 
 def test_dialogue_logger_redacts_contact_details(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
-    from autonova.config import get_settings
+    from autosfera.config import get_settings
 
     get_settings.cache_clear()
     monkeypatch.setenv("DIALOGUES_DIR", str(tmp_path))
@@ -603,7 +682,7 @@ def test_dialogue_logger_redacts_contact_details(tmp_path: Path, monkeypatch: py
 
 
 def test_dialogue_logger_keeps_non_phone_numbers(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
-    from autonova.config import get_settings
+    from autosfera.config import get_settings
 
     get_settings.cache_clear()
     monkeypatch.setenv("DIALOGUES_DIR", str(tmp_path))
@@ -636,7 +715,7 @@ def test_leasing_b2b_scenario(orchestrator: AIOrchestrator):
 
 
 def test_prompts_exist():
-    from autonova.config import get_settings
+    from autosfera.config import get_settings
 
     prompts = get_settings().prompts_dir
     for name in ("orchestrator.txt", "sales_agent.txt", "support_agent.txt", "service_agent.txt"):

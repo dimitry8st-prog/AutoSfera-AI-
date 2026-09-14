@@ -7,10 +7,10 @@ import argparse
 import json
 from pathlib import Path
 
-from autonova.config import get_settings
-from autonova.evaluation import apply_gates, evaluate, load_cases, markdown_report
-from autonova.knowledge import KnowledgeBase
-from autonova.rag import build_retriever
+from autosfera.config import get_settings
+from autosfera.evaluation import apply_gates, evaluate, load_cases, markdown_report
+from autosfera.knowledge import KnowledgeBase
+from autosfera.rag import build_retriever
 
 
 def main() -> int:

@@ -4,9 +4,9 @@ import json
 
 import pytest
 
-from autonova.auth import create_token, decode_token, sign_webhook, verify_webhook
-from autonova.knowledge import KnowledgeBase
-from autonova.storage import PlatformStore
+from autosfera.auth import create_token, decode_token, sign_webhook, verify_webhook
+from autosfera.knowledge import KnowledgeBase
+from autosfera.storage import PlatformStore
 
 
 def test_signed_token_round_trip():
