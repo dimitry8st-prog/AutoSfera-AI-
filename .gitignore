@@ -18,3 +18,7 @@ TZ_extracted.txt
 .DS_Store
 Untitled
 .claude/
+demo/video/*
+!demo/video/.gitkeep
+demo/video-defense/clips/
+demo/video-defense/assets/dis-mascot-src.jpg
