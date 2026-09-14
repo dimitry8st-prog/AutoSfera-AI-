@@ -233,6 +233,8 @@ cp .env.example .env
 | `OPENAI_API_KEY` | — | ключ для режима `openai` |
 | `OPENAI_BASE_URL` | `https://api.openai.com/v1` | совместимый endpoint |
 | `OPENAI_MODEL` | `gpt-4o-mini` | модель Chat Completions |
+| `OPENAI_SIMPLE_MODEL` | `gpt-4o-mini` | модель для одного понятного намерения |
+| `OPENAI_COMPLEX_MODEL` | `gpt-4o` | модель для составных намерений |
 | `LOG_LEVEL` | `INFO` | уровень логов |
 | `LOGS_DIR` | `logs/` | каталог логов |
 | `DIALOGUES_DIR` | `data/dialogues/` | JSONL диалогов |
@@ -255,8 +257,10 @@ cp .env.example .env
 DEALER_ID=main-salon
 DEALER_NAME=AutoSfera Demo Salon
 LLM_MODE=openai
-OPENAI_API_KEY=sk-...
+OPENAI_API_KEY=your-openai-api-key
 OPENAI_MODEL=gpt-4o-mini
+OPENAI_SIMPLE_MODEL=gpt-4o-mini
+OPENAI_COMPLEX_MODEL=gpt-4o
 LOG_LEVEL=INFO
 ```
 
@@ -532,7 +536,7 @@ AutoSfera AI/
 2. Telegram / WhatsApp / Email / CRM — HTTP-заготовки без реальных Bot API и CRM-учётных данных.
 3. Демонстрационный вход не заменяет корпоративный Identity Provider; пароли и секреты из `.env.example` необходимо заменить.
 4. Все коммерческие и клиентские данные вымышлены.
-5. В mock-режиме маршрутизация и ответы детерминированы skills/KB; `LLM_MODE=openai` меняет стиль, но не источник фактов.
+5. В mock-режиме маршрутизация и ответы детерминированы skills/KB. В `LLM_MODE=openai` агентский промпт переформулирует только подтверждённый RAG-черновик. JSON ответа проверяется: неизвестные источники и изменение решения об эскалации отклоняются, после чего используется безопасный черновик.
 
 ---
 

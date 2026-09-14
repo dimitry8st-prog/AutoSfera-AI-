@@ -123,7 +123,9 @@ _SAFETY_DOCUMENTS = {
 
 _ILLEGAL_TOPIC_KEYS = (
     "оружие", "пистолет", "винтовк", "калашников", "ак-47", "ak-47",
-    "бомб", "взрывчат", "гранат", "самострел", "наркотик", "наркота",
+    "бомб", "взрывчат", "гранат", "гранатомет", "гранатамет", "гранотомет",
+    "грвнотомет", "самострел", "наркотик", "наркота", "крэк", "крек",
+    "крэка", "крека", "крега",
     "кокаин", "героин", "амфетамин", "мефедрон", "марихуан", "гашиш",
     "экстази", "закладк", "спайс", "метадон", "как убить",
 )
@@ -423,7 +425,9 @@ class AIOrchestrator:
             agent = "SALES_AGENT"
         result = {
             "agent": agent,
-            "greeting": data.get("greeting", f"Подключаю {AGENT_META[agent]['label']} AutoSfera AI."),
+            # Disclosure is deterministic so the model cannot omit, duplicate or
+            # alter it. Agent prompts are explicitly instructed not to greet.
+            "greeting": f"Подключаю {AGENT_META[agent]['label']} — ИИ-ассистента AutoSfera AI.",
             "reason": data.get("reason", "intent_match"),
         }
         logger.info(
@@ -557,10 +561,17 @@ class AIOrchestrator:
             )
             if previous_user_message:
                 message = f"{previous_user_message}\nУточнение пользователя: {message}"
+        model_tier = (
+            state.get("model_decision").model_tier
+            if state.get("model_decision") is not None
+            else "simple"
+        ) or "simple"
+        llm = self.complex_llm if model_tier == "complex" else self.simple_llm
         reply = self.agents[state["selected_agent"]].handle(
             message,
             history=state["session"].history,
             dialogue=state["dialogue"],
+            llm=llm,
         )
         return {"agent_reply": reply}
 
@@ -926,6 +937,11 @@ class AIOrchestrator:
             message,
             history=session.history,
             dialogue=dialogue,
+            llm=(
+                self.complex_llm
+                if model_decision.model_tier == "complex"
+                else self.simple_llm
+            ),
         )
 
         reply_text = agent_reply.text

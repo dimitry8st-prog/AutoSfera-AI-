@@ -20,7 +20,7 @@ services:
       context: .
       args:
         BUILD_SHA: ${BUILD_SHA:-local}
-        PROMPT_VERSION: ${PROMPT_VERSION:-2026-09-13-beta.1}
+        PROMPT_VERSION: ${PROMPT_VERSION:-2026-09-14-beta.2}
         KNOWLEDGE_BASE_VERSION: ${KNOWLEDGE_BASE_VERSION:-auto}
     restart: unless-stopped
     depends_on:
@@ -34,6 +34,9 @@ services:
       DEALER_NAME: ${DEALER_NAME:-AutoSfera Demo Salon}
       LLM_MODE: ${LLM_MODE:-mock}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4o-mini}
+      OPENAI_SIMPLE_MODEL: ${OPENAI_SIMPLE_MODEL:-gpt-4o-mini}
+      OPENAI_COMPLEX_MODEL: ${OPENAI_COMPLEX_MODEL:-gpt-4o}
       RAG_BACKEND: ${RAG_BACKEND:-tfidf}
       EMBEDDING_MODE: ${EMBEDDING_MODE:-openai}
       EMBEDDING_MODEL: ${EMBEDDING_MODEL:-text-embedding-3-small}

@@ -670,15 +670,19 @@ def credit_leasing(message: str, chunks: list[RetrievedChunk], ctx: dict[str, An
 
 
 def test_drive_booking(message: str, chunks: list[RetrievedChunk], ctx: dict[str, Any]) -> SkillResult:
-    text, ids, _ = _context_or_missing(chunks, "test_drive_booking")
+    text, ids, missing_context = _context_or_missing(chunks, "test_drive_booking")
     combined = _user_constraint_text(message, ctx)
     phone = _extract_phone(combined)
     vehicle = _extract_vehicle(combined)
     fields = {key: value for key, value in {"phone": phone, "vehicle": vehicle}.items() if value}
+    # A booking request is an action flow, not a factual question. Missing RAG
+    # context must not produce the contradictory "нет данных" fallback while
+    # the assistant is collecting fields for the request.
+    context_prefix = "" if missing_context else f"{text}\n\n"
     if phone and vehicle:
         reply = (
-            f"{text}\n\n"
-            f"Заявка на тест-драйв принята предварительно (телефон: {phone}). "
+            context_prefix
+            + f"Заявка на тест-драйв принята предварительно (телефон: {phone}). "
             "Подтверждение выполнит менеджер."
         )
         return SkillResult(
@@ -691,8 +695,10 @@ def test_drive_booking(message: str, chunks: list[RetrievedChunk], ctx: dict[str
             rag_ids=ids,
         )
     reply = (
-        f"{text}\n\n"
-        "Для записи укажите ФИО, телефон, модель и желаемые дату/время."
+        context_prefix
+        + "Готов подготовить предварительную заявку на тест-драйв. "
+        "Укажите ФИО, телефон, модель автомобиля и желаемые дату/время. "
+        "Окончательно запись подтвердит менеджер."
     )
     return SkillResult("test_drive_booking", reply, collected_fields=fields, rag_ids=ids)
 

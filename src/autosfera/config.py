@@ -22,7 +22,7 @@ class Settings(BaseSettings):
     app_version: str = Field(default="3.1.0-beta.1", validation_alias="APP_VERSION")
     build_sha: str = Field(default="local", validation_alias="BUILD_SHA")
     prompt_version: str = Field(
-        default="2026-09-13-beta.1", validation_alias="PROMPT_VERSION"
+        default="2026-09-14-beta.2", validation_alias="PROMPT_VERSION"
     )
     knowledge_base_version: str = Field(
         default="auto", validation_alias="KNOWLEDGE_BASE_VERSION"
