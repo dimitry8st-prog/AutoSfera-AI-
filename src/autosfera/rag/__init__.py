@@ -9,12 +9,12 @@ from typing import Any, Callable
 import psycopg
 from psycopg.rows import dict_row
 
-from autonova.config import get_settings
-from autonova.embeddings import EmbeddingClient, get_embedding_client
-from autonova.knowledge import SECTION_ACCESS, Document, KnowledgeBase, stem_token, tokenize
-from autonova.logging import get_logger
+from autosfera.config import get_settings
+from autosfera.embeddings import EmbeddingClient, get_embedding_client
+from autosfera.knowledge import SECTION_ACCESS, Document, KnowledgeBase, stem_token, tokenize
+from autosfera.logging import get_logger
 
-logger = get_logger("autonova.rag")
+logger = get_logger("autosfera.rag")
 
 def _section_boost(query: str, section: str) -> float:
     q = query.lower().replace("ё", "е")
@@ -154,11 +154,10 @@ class RAGRetriever:
         top_k = top_k if top_k is not None else settings.rag_top_k
         min_score = min_score if min_score is not None else settings.rag_min_score
 
-        base_query_tokens = tokenize(query, expand=False)
         query_tokens = tokenize(query, expand=True)
         query_vec = self._tfidf(query_tokens)
         query_terms = list(dict.fromkeys(
-            stem_token(token) for token in base_query_tokens if len(stem_token(token)) > 2
+            stem_token(token) for token in query_tokens if len(stem_token(token)) > 2
         ))
         weak_terms = {"компан", "autosfera", "авто"}
         candidates = self.kb.for_agent(agent_key)

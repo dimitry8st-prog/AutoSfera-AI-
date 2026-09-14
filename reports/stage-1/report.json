@@ -1,22 +1,24 @@
 {
   "runtime": {
     "app_version": "3.1.0-beta.1",
-    "build_sha": "cbc6078",
+    "build_sha": "dddc4bd",
     "prompts": {
       "version": "2026-09-13-beta.1",
-      "fingerprint": "f94fca3b57fd"
+      "fingerprint": "90cbbf22ad63"
     },
     "knowledge_base": {
       "version": "2026-09-13-beta.1",
-      "fingerprint": "c8b0cb409f4a"
+      "fingerprint": "5827e9bd1fe9"
     },
     "llm": {
       "mode": "mock",
-      "model": null
+      "model": null,
+      "simple_model": null,
+      "complex_model": null
     },
     "rag_backend": "tfidf"
   },
-  "passed": 9,
+  "passed": 13,
   "total": 13,
   "results": [
     {
@@ -28,6 +30,9 @@
           "agent": "SALES_AGENT",
           "skill": "vehicle_selection",
           "routing_reason": "intent_match",
+          "model_route": "simple_model",
+          "model_tier": "simple",
+          "routing_risk": "low",
           "escalated": false,
           "rag_ids": [
             "sales-models"
@@ -44,10 +49,12 @@
           "agent": "SUPPORT_AGENT",
           "skill": "order_status",
           "routing_reason": "intent_match",
+          "model_route": "simple_model",
+          "model_tier": "simple",
+          "routing_risk": "low",
           "escalated": false,
           "rag_ids": [
-            "support-orders",
-            "faq-support-status"
+            "support-orders"
           ]
         }
       ]
@@ -61,6 +68,9 @@
           "agent": "SERVICE_AGENT",
           "skill": "warranty_consultation",
           "routing_reason": "intent_match",
+          "model_route": "simple_model",
+          "model_tier": "simple",
+          "routing_risk": "low",
           "escalated": false,
           "rag_ids": [
             "service-warranty"
@@ -77,6 +87,9 @@
           "agent": "SERVICE_AGENT",
           "skill": "service_booking",
           "routing_reason": "intent_match",
+          "model_route": "simple_model",
+          "model_tier": "simple",
+          "routing_risk": "low",
           "escalated": false,
           "rag_ids": [
             "service-booking"
@@ -93,6 +106,9 @@
           "agent": "EMPLOYEE_AGENT",
           "skill": "process_lookup",
           "routing_reason": "intent_match",
+          "model_route": "simple_model",
+          "model_tier": "simple",
+          "routing_risk": "low",
           "escalated": false,
           "rag_ids": [
             "internal-sales-process",
@@ -103,91 +119,96 @@
     },
     {
       "id": "switch_service_to_purchase",
-      "passed": false,
-      "errors": [
-        "agent: expected 'SALES_AGENT', got 'SERVICE_AGENT'",
-        "routing_reason: expected 'topic_switch', got 'session_continuity'"
-      ],
+      "passed": true,
+      "errors": [],
       "observations": [
         {
           "agent": "SERVICE_AGENT",
           "skill": "warranty_consultation",
           "routing_reason": "intent_match",
+          "model_route": "simple_model",
+          "model_tier": "simple",
+          "routing_risk": "low",
           "escalated": false,
           "rag_ids": [
             "service-warranty"
           ]
         },
         {
-          "agent": "SERVICE_AGENT",
-          "skill": "warranty_consultation",
-          "routing_reason": "session_continuity",
+          "agent": "SALES_AGENT",
+          "skill": "vehicle_selection",
+          "routing_reason": "topic_switch",
+          "model_route": "simple_model",
+          "model_tier": "simple",
+          "routing_risk": "low",
           "escalated": false,
           "rag_ids": [
-            "service-warranty"
+            "sales-purchase-conditions"
           ]
         }
       ]
     },
     {
       "id": "switch_sales_to_service",
-      "passed": false,
-      "errors": [
-        "agent: expected 'SERVICE_AGENT', got 'SUPPORT_AGENT'"
-      ],
+      "passed": true,
+      "errors": [],
       "observations": [
         {
           "agent": "SALES_AGENT",
           "skill": "vehicle_selection",
           "routing_reason": "intent_match",
+          "model_route": "simple_model",
+          "model_tier": "simple",
+          "routing_risk": "low",
           "escalated": false,
           "rag_ids": [
             "sales-models"
           ]
         },
         {
-          "agent": "SUPPORT_AGENT",
-          "skill": "customer_faq",
+          "agent": "SERVICE_AGENT",
+          "skill": "warranty_consultation",
           "routing_reason": "topic_switch",
+          "model_route": "simple_model",
+          "model_tier": "simple",
+          "routing_risk": "low",
           "escalated": false,
           "rag_ids": [
-            "script-service-client",
-            "policy-escalation"
+            "service-warranty"
           ]
         }
       ]
     },
     {
       "id": "ambiguous_conditions",
-      "passed": false,
-      "errors": [
-        "routing_reason: expected 'clarify', got 'conversational_faq'"
-      ],
+      "passed": true,
+      "errors": [],
       "observations": [
         {
           "agent": "AI_ORCHESTRATOR",
-          "skill": "common_phrases",
-          "routing_reason": "conversational_faq",
+          "skill": "route_clarification",
+          "routing_reason": "clarify",
+          "model_route": "clarify",
+          "model_tier": null,
+          "routing_risk": "low",
           "escalated": false,
-          "rag_ids": [
-            "conversation-capabilities"
-          ]
+          "rag_ids": []
         }
       ]
     },
     {
       "id": "ambiguous_paperwork",
-      "passed": false,
-      "errors": [
-        "agent: expected 'AI_ORCHESTRATOR', got 'SALES_AGENT'",
-        "routing_reason: expected 'clarify', got 'intent_match'"
-      ],
+      "passed": true,
+      "errors": [],
       "observations": [
         {
-          "agent": "SALES_AGENT",
-          "skill": "customer_faq",
-          "routing_reason": "intent_match",
-          "escalated": true,
+          "agent": "AI_ORCHESTRATOR",
+          "skill": "route_clarification",
+          "routing_reason": "clarify",
+          "model_route": "clarify",
+          "model_tier": null,
+          "routing_risk": "low",
+          "escalated": false,
           "rag_ids": []
         }
       ]
@@ -201,6 +222,9 @@
           "agent": "AI_ORCHESTRATOR",
           "skill": "common_phrases",
           "routing_reason": "off_scope",
+          "model_route": "skill",
+          "model_tier": null,
+          "routing_risk": "low",
           "escalated": false,
           "rag_ids": [
             "conversation-off-scope"
@@ -217,6 +241,9 @@
           "agent": "AI_ORCHESTRATOR",
           "skill": "safety_refusal",
           "routing_reason": "safety_illegal",
+          "model_route": "skill",
+          "model_tier": null,
+          "routing_risk": "low",
           "escalated": false,
           "rag_ids": [
             "conversation-safety-illegal"

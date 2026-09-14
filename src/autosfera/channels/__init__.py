@@ -3,10 +3,10 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from typing import Any
 
-from autonova.logging import get_logger
-from autonova.orchestrator import AIOrchestrator, TurnResult
+from autosfera.logging import get_logger
+from autosfera.orchestrator import AIOrchestrator, TurnResult
 
-logger = get_logger("autonova.channels")
+logger = get_logger("autosfera.channels")
 
 
 class ChannelAdapter(ABC):

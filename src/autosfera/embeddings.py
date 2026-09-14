@@ -6,7 +6,7 @@ from typing import Protocol
 
 import httpx
 
-from autonova.config import get_settings
+from autosfera.config import get_settings
 
 
 class EmbeddingClient(Protocol):

@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
-from autonova.config import get_settings
+from autosfera.config import get_settings
 
 
 _configured = False
@@ -45,7 +45,7 @@ def setup_logging(level: str | None = None) -> logging.Logger:
     settings.logs_dir.mkdir(parents=True, exist_ok=True)
     settings.dialogues_dir.mkdir(parents=True, exist_ok=True)
 
-    root = logging.getLogger("autonova")
+    root = logging.getLogger("autosfera")
     if _configured:
         return root
 
@@ -64,7 +64,7 @@ def setup_logging(level: str | None = None) -> logging.Logger:
     root.addHandler(console)
 
     file_handler = RotatingFileHandler(
-        settings.logs_dir / "autonova.log",
+        settings.logs_dir / "autosfera.log",
         maxBytes=2_000_000,
         backupCount=5,
         encoding="utf-8",
@@ -82,7 +82,7 @@ def setup_logging(level: str | None = None) -> logging.Logger:
     dialogue_handler.setFormatter(formatter)
     dialogue_handler.setLevel(logging.INFO)
 
-    dialogue_logger = logging.getLogger("autonova.dialogues")
+    dialogue_logger = logging.getLogger("autosfera.dialogues")
     dialogue_logger.setLevel(logging.INFO)
     dialogue_logger.handlers.clear()
     dialogue_logger.addHandler(dialogue_handler)
@@ -94,7 +94,7 @@ def setup_logging(level: str | None = None) -> logging.Logger:
     return root
 
 
-def get_logger(name: str = "autonova") -> logging.Logger:
+def get_logger(name: str = "autosfera") -> logging.Logger:
     if not _configured:
         setup_logging()
     return logging.getLogger(name)
@@ -108,7 +108,7 @@ class DialogueLogger:
         settings.dialogues_dir.mkdir(parents=True, exist_ok=True)
         self.session_id = session_id or str(uuid4())
         self.path = settings.dialogues_dir / f"{self.session_id}.jsonl"
-        self._logger = get_logger("autonova.dialogues")
+        self._logger = get_logger("autosfera.dialogues")
 
     def log_event(self, event_type: str, payload: dict[str, Any]) -> None:
         safe_payload = _redact_sensitive(payload)

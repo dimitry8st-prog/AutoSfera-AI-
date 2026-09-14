@@ -31,7 +31,7 @@
 Браузер (frontend/)
    │  POST /api/chat
    ▼
-FastAPI (src/autonova/api)
+FastAPI (src/autosfera/api)
    ▼
 Channel → AI Orchestrator → Agent → Skill → RAG → Knowledge Base
    │
@@ -90,7 +90,7 @@ Channel → AI Orchestrator → Agent → Skill → RAG → Knowledge Base
 ## 6. СТРУКТУРА КОДА
 
 ```
-src/autonova/
+src/autosfera/
   orchestrator/  — маршрутизация и сессии
   agents/        — Sales, Support, Service
   skills/        — 12 skills
@@ -121,7 +121,7 @@ tests/           — pytest
 ```bash
 python -m pip install -e ".[dev]"
 pytest -q
-uvicorn autonova.api.main:app --reload --app-dir src
+uvicorn autosfera.api.main:app --reload --app-dir src
 ```
 
 http://127.0.0.1:8000

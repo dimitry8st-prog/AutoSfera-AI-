@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from autonova.config import get_settings
+from autosfera.config import get_settings
 
 
 ROLES = frozenset({"guest", "sales", "service", "employee", "admin"})

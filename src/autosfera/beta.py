@@ -2,9 +2,9 @@ from __future__ import annotations
 
 from typing import Any
 
-from autonova.agents import AGENT_META
-from autonova.config import Settings
-from autonova.skills import build_skill_registry
+from autosfera.agents import AGENT_META
+from autosfera.config import Settings
+from autosfera.skills import build_skill_registry
 
 
 _PLACEHOLDER_MARKERS = ("demo", "replace", "change-me")

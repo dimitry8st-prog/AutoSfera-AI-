@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Explicitly rebuild the current dealer's pgvector knowledge index."""
 
-from autonova.config import get_settings
-from autonova.knowledge import KnowledgeBase
-from autonova.rag import PgVectorRAGRetriever
+from autosfera.config import get_settings
+from autosfera.knowledge import KnowledgeBase
+from autosfera.rag import PgVectorRAGRetriever
 
 
 def main() -> None:

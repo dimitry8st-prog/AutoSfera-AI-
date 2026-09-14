@@ -23,7 +23,7 @@
 
 Локальная end-to-end проверка через изолированный n8n sandbox запускается командой `scripts/setup_n8n_sandbox.sh`. Она проверяет путь от предложения действия до подписанного callback и аудита; подробности — в [`integrations/n8n/README.md`](integrations/n8n/README.md).
 
-> Пакет Python пока сохраняет техническое имя `autonova`, чтобы не ломать существующие интеграции. Публичный продукт и API называются AutoSfera AI.
+Пакет Python, консольная команда и публичное API используют единое имя `autosfera`.
 
 ## Возможности версии 2.0
 
@@ -122,7 +122,7 @@
   frontend/  →  POST /api/chat
         │
         ▼
-  FastAPI (src/autonova/api)
+  FastAPI (src/autosfera/api)
         │
         ▼
   Channel Adapter (web / stubs)
@@ -192,7 +192,7 @@ python -m pip install -e ".[dev]"
 pytest -q
 
 # сервер
-uvicorn autonova.api.main:app --reload --app-dir src
+uvicorn autosfera.api.main:app --reload --app-dir src
 ```
 
 Откройте: **http://127.0.0.1:8000**
@@ -260,7 +260,7 @@ OPENAI_MODEL=gpt-4o-mini
 LOG_LEVEL=INFO
 ```
 
-Настройки также читаются из `src/autonova/config.py` (пути к KB и prompts).
+Настройки также читаются из `src/autosfera/config.py` (пути к KB и prompts).
 В режиме `LLM_MODE=openai` переменные `OPENAI_SIMPLE_MODEL` и
 `OPENAI_COMPLEX_MODEL` задают модели для простых и составных намерений. Если
 они пусты, для обоих уровней используется `OPENAI_MODEL`.
@@ -414,11 +414,11 @@ Content-Type: application/json
 | `policies` | эскалация, безопасность ответов |
 | `glossary` | термины |
 
-Доступ агентов к разделам ограничен (**Least Privilege**) в `src/autonova/knowledge/__init__.py` → `SECTION_ACCESS`.
+Доступ агентов к разделам ограничен (**Least Privilege**) в `src/autosfera/knowledge/__init__.py` → `SECTION_ACCESS`.
 
 ### RAG
 
-Реализация: `src/autonova/rag/` поддерживает два явно выбираемых backend:
+Реализация: `src/autosfera/rag/` поддерживает два явно выбираемых backend:
 
 - `RAG_BACKEND=tfidf` — безопасный локальный режим без внешних ключей;
 - `RAG_BACKEND=pgvector` — PostgreSQL + pgvector, эмбеддинги, HNSW и cosine similarity.
@@ -437,7 +437,7 @@ Content-Type: application/json
 
 | Куда | Что |
 |---|---|
-| `logs/autonova.log` | системные события приложения |
+| `logs/autosfera.log` | системные события приложения |
 | `logs/dialogues.log` | ход диалогов (routing, reply, escalation) |
 | `data/dialogues/<session_id>.jsonl` | события сессии построчно (JSONL) |
 
@@ -450,7 +450,7 @@ Content-Type: application/json
 ```bash
 pytest -q
 # или с покрытием:
-pytest --cov=autonova -q
+pytest --cov=autosfera -q
 ```
 
 Основные проверки (`tests/`):
@@ -494,13 +494,13 @@ AutoSfera AI/
 ├── README.md
 ├── docs/COMMERCIAL_PILOT.md        # спецификация пилота 2.0
 ├── AutoSfera_MVP_Documentation.md   # архив учебного MVP 1.1
-├── pyproject.toml                  # пакет autonova 3.1.0 beta
+├── pyproject.toml                  # пакет autosfera 3.1.0 beta
 ├── .env.example
 ├── contracts/                      # JSON Schema для n8n/Langflow
 ├── integrations/                   # границы и правила n8n/Langflow
 ├── prompts/                        # system prompts (4 агента + orchestrator)
 ├── knowledge_base/                 # JSON Knowledge Base
-├── src/autonova/
+├── src/autosfera/
 │   ├── api/main.py                 # FastAPI
 │   ├── orchestrator/               # маршрутизация и сессии
 │   ├── agents/                     # Sales / Support / Service / Employee

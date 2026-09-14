@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Deterministic acceptance checks for the model router and human handoff."""
 
-from autonova.llm import MockLLMClient
-from autonova.model_router import ModelRouter
-from autonova.orchestrator import AIOrchestrator
+from autosfera.llm import MockLLMClient
+from autosfera.model_router import ModelRouter
+from autosfera.orchestrator import AIOrchestrator
 
 
 def main() -> int:

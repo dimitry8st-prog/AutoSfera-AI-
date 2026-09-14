@@ -7,10 +7,10 @@ from typing import Any
 
 import httpx
 
-from autonova.config import get_settings
-from autonova.logging import get_logger
+from autosfera.config import get_settings
+from autosfera.logging import get_logger
 
-logger = get_logger("autonova.llm")
+logger = get_logger("autosfera.llm")
 
 
 class LLMClient(ABC):
@@ -40,7 +40,7 @@ class MockLLMClient(LLMClient):
             )
             support_keys = (
                 "заказ", "ан-2024", "документ", "статус", "возврат", "инн",
-                "сделк", "договор", "оформлен",
+                "сделк", "договор", "оформ",
             )
             employee_keys = (
                 "внутренн", "регламент", "скрипт продаж",
@@ -60,6 +60,8 @@ class MockLLMClient(LLMClient):
                 "юридическ",
                 "модел",
                 "каталог",
+                "машин",
+                "автомобил",
             )
 
             def _hit(keys: tuple[str, ...]) -> bool:

@@ -44,7 +44,7 @@ claiming makes this safe when multiple API workers start simultaneously.
 Two complementary records are kept:
 
 - `action_events` is the immutable business audit trail used by the manager UI;
-- `logs/autonova.log` contains operational lifecycle messages for diagnostics.
+- `logs/autosfera.log` contains operational lifecycle messages for diagnostics.
 
 Operational logs include action, dealer and trace identifiers, status, role,
 attempt count and error class. Customer name, phone number and request payload

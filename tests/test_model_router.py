@@ -1,6 +1,6 @@
-from autonova.llm import MockLLMClient
-from autonova.model_router import ModelRouter
-from autonova.orchestrator import AIOrchestrator
+from autosfera.llm import MockLLMClient
+from autosfera.model_router import ModelRouter
+from autosfera.orchestrator import AIOrchestrator
 
 
 def test_model_router_uses_simple_and_complex_tiers():

@@ -5,13 +5,13 @@ from typing import Any
 
 import httpx
 
-from autonova.auth import sign_webhook
-from autonova.config import get_settings
-from autonova.logging import get_logger
-from autonova.storage import PlatformStore
+from autosfera.auth import sign_webhook
+from autosfera.config import get_settings
+from autosfera.logging import get_logger
+from autosfera.storage import PlatformStore
 
 
-logger = get_logger("autonova.research")
+logger = get_logger("autosfera.research")
 
 
 def dispatch_research_job(store: PlatformStore, job: dict[str, Any]) -> None:
