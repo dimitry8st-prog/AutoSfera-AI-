@@ -1,0 +1,5 @@
+file '04_architecture_01.mp3'
+file '04_architecture_02.mp3'
+file '04_architecture_03.mp3'
+file '04_architecture_04.mp3'
+file '04_architecture_05.mp3'

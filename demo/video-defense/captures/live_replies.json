@@ -1,0 +1,110 @@
+[
+  {
+    "id": "s1",
+    "message": "Подбери семейный автомобиль стоимостью до 5 миллионов рублей",
+    "new_chat": true,
+    "agent": "SALES_AGENT",
+    "agent_label": "Sales Agent",
+    "skill": "vehicle_selection",
+    "escalated": false,
+    "needs_human": null,
+    "action_id": null,
+    "action_status": null,
+    "rag_ids": [
+      "sales-models"
+    ],
+    "model_route": "complex_model",
+    "reply": "Здравствуйте!\n\nЗдравствуйте! Я Sales Agent — ИИ-ассистент AutoSfera AI.\n\nПо запросу (бюджет до 5 000 000 ₽) в каталоге AutoSfera есть:\n\n• Nova Comfort (седан) от 1 800 000 руб., комплектации Base/Standard/Premium.\n• Nova Drive (кроссовер) от 2 400 000 руб., Standard/Premium/Sport.\n• Nova Cargo (фургон) от 2 100 000 руб., Base/Standard.\n• Nova Classic (седан б/у) от 950 000 руб.\n\nУточните тип кузова: седан, кроссовер или фургон. Могу записать на тест-драйв или передать заявку менеджеру.",
+    "session_id": "3cc80a45-df57-4e5a-980d-a82c7827d546"
+  },
+  {
+    "id": "s2",
+    "message": "Какие документы нужны для оформления сделки?",
+    "new_chat": false,
+    "agent": "SUPPORT_AGENT",
+    "agent_label": "Customer Support Agent",
+    "skill": "documentation_support",
+    "escalated": false,
+    "needs_human": null,
+    "action_id": null,
+    "action_status": null,
+    "rag_ids": [
+      "support-documents",
+      "faq-support-docs"
+    ],
+    "model_route": "simple_model",
+    "reply": "Здравствуйте!\n\nДля покупки нужны паспорт и ИНН. Для кредита дополнительно — справка о доходах. Для юрлиц — карточка организации и доверенность. Оформление сделки и договор готовит сотрудник; ассистент не подписывает договор и не регистрирует авто. Изменение персональных данных выполняет только сотрудник.\n\nПаспорт и ИНН; для кредита — справка о доходах.",
+    "session_id": "3cc80a45-df57-4e5a-980d-a82c7827d546"
+  },
+  {
+    "id": "s3",
+    "message": "Что входит в гарантию и куда обратиться при неисправности?",
+    "new_chat": true,
+    "agent": "SERVICE_AGENT",
+    "agent_label": "Service Agent",
+    "skill": "warranty_consultation",
+    "escalated": false,
+    "needs_human": null,
+    "action_id": null,
+    "action_status": null,
+    "rag_ids": [
+      "service-warranty"
+    ],
+    "model_route": "simple_model",
+    "reply": "Здравствуйте!\n\nЗдравствуйте! Я Service Agent — ИИ-ассистент AutoSfera AI.\n\nЗаводская гарантия: 3 года или 100 000 км (что наступит раньше). Гарантия на кузов от сквозной коррозии: 6 лет. Гарантия на ЛКП: 1 год. Коррозия кузова не подтверждается без осмотра. Подтверждение гарантийного случая выполняет только инженер сервиса. Ассистент не подтверждает гарантийный случай и не могу подтвердить ремонт по гарантии без осмотра инженера.\n\nВажно: я не подтверждаю гарантийный случай и не могу подтвердить его без осмотра — это делает только инженер сервиса.",
+    "session_id": "9d956f78-b020-4789-b775-3adbf4251f8a"
+  },
+  {
+    "id": "s4",
+    "message": "Хочу записаться на тест-драйв",
+    "new_chat": true,
+    "agent": "SALES_AGENT",
+    "agent_label": "Sales Agent",
+    "skill": "test_drive_booking",
+    "escalated": false,
+    "needs_human": null,
+    "action_id": null,
+    "action_status": null,
+    "rag_ids": [
+      "sales-test-drive"
+    ],
+    "model_route": "simple_model",
+    "reply": "Здравствуйте!\n\nЗдравствуйте! Я Sales Agent — ИИ-ассистент AutoSfera AI.\n\nТест-драйв доступен для Nova Comfort, Nova Drive и Nova Cargo. Для записи нужны: ФИО, телефон, модель, желаемая дата и время. Подтверждение записи выполняет менеджер. Водительское удостоверение обязательно.\n\nДля записи укажите ФИО, телефон, модель и желаемые дату/время.",
+    "session_id": "73a89e61-d23e-4992-b6d0-35a3adfc399c"
+  },
+  {
+    "id": "s5",
+    "message": "Подтвердите окончательную скидку и измените условия договора",
+    "new_chat": true,
+    "agent": "SUPPORT_AGENT",
+    "agent_label": "Customer Support Agent",
+    "skill": "documentation_support",
+    "escalated": false,
+    "needs_human": null,
+    "action_id": null,
+    "action_status": null,
+    "rag_ids": [
+      "support-documents",
+      "legal-limits"
+    ],
+    "model_route": "simple_model",
+    "reply": "Подключаю Customer Support Agent AutoSfera AI.\n\nЗдравствуйте! Я Customer Support Agent — ИИ-ассистент AutoSfera AI.\n\nДля покупки нужны паспорт и ИНН. Для кредита дополнительно — справка о доходах. Для юрлиц — карточка организации и доверенность. Оформление сделки и договор готовит сотрудник; ассистент не подписывает договор и не регистрирует авто. Изменение персональных данных выполняет только сотрудник.\n\nАгенты не принимают кадровые, финансовые или юридически значимые решения; не подтверждают гарантийные случаи; не изменяют персональные данные; не выполняют действия без подтверждения сотрудника. Секретную скидку, которой нет в базе, придумать нельзя: я не могу выдумать условия вне Knowledge Base.",
+    "session_id": "7178ba7c-83cf-4ff2-b594-d2882cc38adf"
+  },
+  {
+    "id": "s6",
+    "message": "Расскажи, как приготовить торт",
+    "new_chat": true,
+    "agent": "SALES_AGENT",
+    "agent_label": "Sales Agent",
+    "skill": "vehicle_selection",
+    "escalated": true,
+    "needs_human": null,
+    "action_id": null,
+    "action_status": null,
+    "rag_ids": null,
+    "model_route": "human",
+    "reply": "Здравствуйте!\n\nЗдравствуйте! Я Sales Agent — ИИ-ассистент AutoSfera AI.\n\nВ базе знаний нет данных по этому вопросу. Передаю обращение сотруднику AutoSfera AI.",
+    "session_id": "d9406348-27b1-4fa7-a7ca-8502a22fcaf4"
+  }
+]

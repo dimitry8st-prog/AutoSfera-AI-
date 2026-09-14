@@ -20,3 +20,6 @@ Untitled
 .claude/
 demo/video/*
 !demo/video/.gitkeep
+demo/video-defense/*.mp4
+demo/video-defense/clips/
+demo/video-defense/assets/dis-mascot-src.jpg
