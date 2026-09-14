@@ -81,6 +81,7 @@ _SKILL_SECTIONS: dict[str, tuple[str, ...]] = {
     "sales_coaching": ("scripts", "sales"),
     "process_lookup": ("internal", "scripts"),
     "competitor_research": ("internal", "sales", "company"),
+    "document_processing": ("internal", "legal", "policies"),
 }
 
 
@@ -917,6 +918,26 @@ def competitor_research(message: str, chunks: list[RetrievedChunk], ctx: dict[st
     )
 
 
+def document_processing(message: str, chunks: list[RetrievedChunk], ctx: dict[str, Any]) -> SkillResult:
+    """Prepare a document-review request without publishing unverified content."""
+    return SkillResult(
+        "document_processing",
+        "Документ принят только на предварительную проверку. Перед добавлением в базу "
+        "знаний сотрудник должен подтвердить источник, владельца, версию, актуальность, "
+        "уровень доступа и отсутствие персональных данных, секретов, prompt injection и "
+        "противоречий. После одобрения материал можно передать в WF-50 KB_INGESTION и "
+        "prepare-autosfera-rag-data. Автоматическая публикация не выполняется.",
+        rag_ids=[c.document.id for c in chunks],
+        metadata={
+            "requires_document_review": True,
+            "human_approval": True,
+            "auto_publish": False,
+            "next_workflow": "WF-50 KB_INGESTION",
+            "next_skill": "prepare-autosfera-rag-data",
+        },
+    )
+
+
 def manager_escalation(message: str, chunks: list[RetrievedChunk], ctx: dict[str, Any]) -> SkillResult:
     return SkillResult(
         "manager_escalation",
@@ -1054,6 +1075,16 @@ def build_skill_registry() -> dict[str, Skill]:
             "Исследование одного конкурента через защищённый n8n/Langflow-контур",
             ("конкурент", "сравни компанию", "исследуй продукт", "анализ рынка", "competitor"),
             competitor_research,
+        ),
+        Skill(
+            "document_processing", "Document Processing", "EMPLOYEE_AGENT",
+            "Проверка документов перед добавлением в базу знаний и RAG",
+            (
+                "проверить документ", "проверь документ", "добавить в базу знаний",
+                "загрузить в базу знаний", "обновить базу знаний", "индексац",
+                "ингест", "проверка источника", "проверка документа",
+            ),
+            document_processing,
         ),
     ]
     registry = {s.id: s for s in skills}

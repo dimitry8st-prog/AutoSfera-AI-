@@ -47,7 +47,7 @@ def beta_readiness(settings: Settings, store: Any, orchestrator: Any) -> dict[st
         {
             "id": "skills",
             "required": True,
-            "ok": len(build_skill_registry()) == 17,
+            "ok": len(build_skill_registry()) == 18,
             "detail": f"{len(build_skill_registry())} skills",
         },
         {

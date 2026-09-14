@@ -8,7 +8,7 @@ AutoSfera AI — мультиагентная платформа для одно
 
 ## Что уже в 2.1.0
 
-- четыре агента и 17 skills, LangGraph-оркестратор, TF-IDF fallback и опциональный pgvector/HNSW RAG, mock/OpenAI LLM;
+- четыре агента и 18 skills, LangGraph-оркестратор, TF-IDF fallback и опциональный pgvector/HNSW RAG, mock/OpenAI LLM;
 - роли `admin` / `sales` / `service` / `employee`, постоянные сессии, кабинет заявок;
 - PostgreSQL как основное хранилище пилота, SQLite — локальный fallback;
 - Alembic-миграции, Docker Compose, `/health` и `/ready`;

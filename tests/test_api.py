@@ -30,7 +30,7 @@ def test_health_and_chat_flow(monkeypatch, tmp_path):
     assert body["runtime"]["knowledge_base"]["version"] == "2026-09-13-beta.1"
     assert body["runtime"]["knowledge_base"]["fingerprint"] not in {"missing", "empty"}
     assert body["runtime"]["llm"]["mode"] == "mock"
-    assert body["skills"] == 17
+    assert body["skills"] == 18
     assert body["agents"] == ["SALES_AGENT", "SUPPORT_AGENT", "SERVICE_AGENT", "EMPLOYEE_AGENT"]
     assert body["dealer_id"] == "main-salon"
     assert body["orchestration"]["engine"] == "langgraph"
@@ -55,7 +55,7 @@ def test_health_and_chat_flow(monkeypatch, tmp_path):
     assert ready.json()["runtime"]["rag_backend"] == "tfidf"
 
     skills = client.get("/api/skills").json()
-    assert len(skills["skills"]) == 17
+    assert len(skills["skills"]) == 18
 
     login = client.post(
         "/api/auth/token",

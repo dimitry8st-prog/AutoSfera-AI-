@@ -8,7 +8,7 @@ AutoSfera AI принимает вопросы клиентов и сотруд�
 
 - веб-чат и HTTP API;
 - оркестратор, который выбирает одного из 4 специализированных агентов;
-- 17 skills для продаж, поддержки, сервиса и внутренних задач;
+- 18 skills для продаж, поддержки, сервиса и внутренних задач;
 - база знаний и RAG с указанием использованных источников;
 - переключение агента при смене темы и сброс диалога;
 - роутер для простых, сложных и требующих сотрудника запросов;
@@ -114,7 +114,7 @@ docker compose ps
 |---|---|
 | LangGraph Orchestrator (маршрутизация и состояние) | ✅ |
 | Sales / Support / Service / Employee Agents | ✅ |
-| 17 Skills (4 клиентских набора + `competitor_research`) | ✅ |
+| 18 Skills, включая `competitor_research` и `document_processing` | ✅ |
 | System Prompts (`prompts/`) | ✅ |
 | Knowledge Base (JSON, в т.ч. internal) | ✅ |
 | RAG: TF-IDF fallback + опциональный pgvector/HNSW | ✅ |
@@ -133,7 +133,7 @@ docker compose ps
 | Машиночитаемая проверка контролируемой беты | ✅ `/api/beta/readiness` |
 | Live CRM/DMS и подтверждённый production-запуск pgvector | ❌ вне демо-пилота |
 
-Соответствие пилоту: оркестратор, 4 агента, 17 Skills, KB, RAG, заявки, аналитика, роли, изоляция `dealer_id`, эскалации и Least Privilege.
+Соответствие пилоту: оркестратор, 4 агента, 18 Skills, KB, RAG, заявки, аналитика, роли, изоляция `dealer_id`, эскалации и Least Privilege.
 
 ---
 
@@ -227,7 +227,7 @@ uvicorn autosfera.api.main:app --reload --app-dir src
 curl http://127.0.0.1:8000/health
 ```
 
-Ожидаемый ответ содержит `"status":"ok"`, четыре агента, `"skills":17`, `"version":"3.1.0-beta.1"`, `dealer_id`, число документов KB и блок `runtime`. В `runtime` указаны commit SHA, версии и отпечатки промптов и базы знаний, а также активные режимы LLM и RAG.
+Ожидаемый ответ содержит `"status":"ok"`, четыре агента, `"skills":18`, `"version":"3.1.0-beta.1"`, `dealer_id`, число документов KB и блок `runtime`. В `runtime` указаны commit SHA, версии и отпечатки промптов и базы знаний, а также активные режимы LLM и RAG.
 
 Проверка готовности базы данных:
 
@@ -317,7 +317,7 @@ LOG_LEVEL=INFO
 | `GET` | `/health` | статус, агенты, skills, dealer, размер KB |
 | `GET` | `/ready` | готовность настроенного хранилища |
 | `GET` | `/api/agents` | метаданные агентов |
-| `GET` | `/api/skills` | список 17 skills |
+| `GET` | `/api/skills` | список 18 skills |
 | `GET` | `/api/knowledge` | публичные разделы KB; внутренние — только сотрудникам |
 | `POST` | `/api/chat` | сообщение чата и решение роутера (`model_route`, `routing_risk`) |
 | `POST` | `/api/reset` | сброс сессии |
@@ -484,7 +484,7 @@ pytest --cov=autosfera -q
 Основные проверки (`tests/`):
 
 - загрузка KB и Least Privilege;
-- регистрация ровно 17 skills;
+- регистрация ровно 18 skills;
 - RAG retrieval;
 - маршрутизация оркестратора (sales / support / service / employee / leasing);
 - граф LangGraph, смена темы, продолжение контекста и безопасный fallback;
@@ -532,7 +532,7 @@ AutoSfera AI/
 │   ├── api/main.py                 # FastAPI
 │   ├── orchestrator/               # маршрутизация и сессии
 │   ├── agents/                     # Sales / Support / Service / Employee
-│   ├── skills/                     # 17 skills
+│   ├── skills/                     # 18 skills
 │   ├── storage/                    # SQLite (dealer_id)
 │   ├── rag/                        # retrieval
 │   ├── knowledge/                  # загрузка KB
