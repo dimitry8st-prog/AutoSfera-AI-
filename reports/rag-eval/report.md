@@ -8,9 +8,9 @@
 - Retrieval hit rate: 100.0%
 - Корректные отказы: 100.0%
 - Безопасные ответы-отказы: 100.0%
-- Покрытие контрольных терминов: 100.0%
+- Покрытие контрольных терминов: 85.7%
 - Нарушения доступа: 0
-- Retrieval latency p95: 0.655 ms
+- Retrieval latency p95: 2.121 ms
 
 - Документы с проверяемой версией/владельцем: 100.0%
 
@@ -26,12 +26,12 @@
 
 ## Кейсы для анализа
 
-- ✅ `sales-model-lineup` — ожидалось ['sales-models'], найдено ['sales-models', 'sales-b2b', 'company-overview']
+- ✅ `sales-model-lineup` — ожидалось ['sales-models'], найдено ['sales-models', 'sales-b2b']
 - ✅ `sales-crossover-budget` — ожидалось ['sales-models'], найдено ['sales-models', 'faq-sales-crossover']
 - ✅ `sales-trade-in` — ожидалось ['sales-trade-in'], найдено ['sales-trade-in']
 - ✅ `sales-test-drive` — ожидалось ['sales-test-drive'], найдено ['sales-test-drive']
-- ✅ `sales-b2b` — ожидалось ['sales-b2b'], найдено ['sales-b2b', 'legal-limits']
-- ✅ `sales-credit` — ожидалось ['finance-credit'], найдено ['finance-credit', 'faq-sales-credit']
+- ✅ `sales-b2b` — ожидалось ['sales-b2b'], найдено ['sales-b2b']
+- ✅ `sales-credit` — ожидалось ['finance-credit'], найдено ['finance-credit', 'sales-purchase-conditions', 'faq-sales-credit']
 - ✅ `service-warranty` — ожидалось ['service-warranty'], найдено ['service-warranty', 'faq-service-warranty', 'script-service-client']
 - ✅ `service-maintenance` — ожидалось ['service-maintenance'], найдено ['service-maintenance']
 - ✅ `service-booking` — ожидалось ['service-booking'], найдено ['service-booking']
@@ -46,7 +46,7 @@
 - ✅ `employee-escalation` — ожидалось ['internal-escalation'], найдено ['internal-escalation']
 - ✅ `employee-new-client-script` — ожидалось ['script-new-client'], найдено ['script-new-client', 'script-corporate', 'script-returning-client', 'script-support-client', 'script-service-client']
 - ✅ `employee-corporate-script` — ожидалось ['script-corporate'], найдено ['script-corporate', 'script-new-client']
-- ✅ `employee-personal-data` — ожидалось ['legal-152'], найдено ['legal-152', 'script-support-client', 'script-new-client', 'script-returning-client', 'script-corporate', 'script-service-client']
+- ✅ `employee-personal-data` — ожидалось ['legal-152'], найдено ['policy-safety', 'legal-152', 'script-support-client', 'script-new-client', 'script-returning-client', 'script-corporate']
 - ✅ `employee-sales-coaching` — ожидалось ['script-new-client'], найдено ['script-new-client']
 - ✅ `finance-leasing` — ожидалось ['finance-leasing'], найдено ['finance-leasing', 'company-overview', 'sales-b2b']
 - ✅ `sales-russian-synonym` — ожидалось ['sales-trade-in'], найдено ['sales-trade-in']

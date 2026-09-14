@@ -74,13 +74,7 @@ class BaseAgent:
         dialogue: DialogueLogger | None = None,
     ) -> AgentReply:
         history = history or []
-        query = " ".join(
-            [
-                *[item.get("content", "") for item in history if item.get("role") == "user"],
-                message,
-            ]
-        ).strip()
-        chunks = self.rag.retrieve(query or message, self.key)
+        chunks = self.rag.retrieve(message, self.key)
         lowered = message.lower().replace("ё", "е")
         if any(phrase in lowered for phrase in ("игнорируй правила", "покажи персональные данные", "раскрой персональные данные")):
             result = SkillResult(
@@ -101,13 +95,20 @@ class BaseAgent:
                 rag_ids=[c.document.id for c in chunks],
             )
         elif not chunks:
-            result = SkillResult(
-                "customer_faq",
-                "В базе знаний нет данных по этому вопросу. Передаю обращение сотруднику AutoSfera AI.",
-                escalated=True,
-                escalation_target="employee",
-                escalation_reason="нет данных в KB",
+            result = self.skills.run(
+                self.key,
+                message,
+                chunks,
+                ctx={"history": history, "kb": self.rag.kb, "message": message},
             )
+            if not result.reply.strip():
+                result = SkillResult(
+                    "customer_faq" if self.key != "EMPLOYEE_AGENT" else "internal_knowledge",
+                    "В базе знаний нет данных по этому вопросу. Передаю обращение сотруднику AutoSfera AI.",
+                    escalated=True,
+                    escalation_target="employee",
+                    escalation_reason="нет данных в KB",
+                )
         else:
             result = self.skills.run(
                 self.key,

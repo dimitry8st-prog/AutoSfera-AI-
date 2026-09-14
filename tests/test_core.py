@@ -356,6 +356,50 @@ def test_catalog_question_switches_from_support_to_sales(orchestrator: AIOrchest
     assert "Nova" in second.reply
 
 
+def test_order_session_does_not_stick_on_unrelated_product(orchestrator: AIOrchestrator):
+    first = orchestrator.handle_message("Статус заказа АН-2024-1234")
+    tanks = orchestrator.handle_message("Продай тану", session_id=first.session_id)
+    stock = orchestrator.handle_message("А танки у вас есть", session_id=first.session_id)
+
+    assert first.agent == "SUPPORT_AGENT"
+    assert first.skill == "order_status"
+    assert tanks.agent == "AI_ORCHESTRATOR"
+    assert tanks.skill == "common_phrases"
+    assert tanks.rag_ids == ["conversation-off-scope"]
+    assert "АН-2024-1234" not in tanks.reply
+    assert "Nova" not in tanks.reply
+    assert stock.agent == "AI_ORCHESTRATOR"
+    assert "АН-2024-1234" not in stock.reply
+    assert "Nova Comfort" not in stock.reply
+    assert orchestrator.sessions[first.session_id].active_agent is None
+
+
+def test_sell_crossover_switches_off_order_status(orchestrator: AIOrchestrator):
+    first = orchestrator.handle_message("Статус заказа АН-2024-1234")
+    second = orchestrator.handle_message("Продай кроссовер", session_id=first.session_id)
+    assert second.agent == "SALES_AGENT"
+    assert second.skill == "vehicle_selection"
+    assert second.routing_reason == "topic_switch"
+    assert "Nova Drive" in second.reply
+    assert "АН-2024-1234" not in second.reply
+
+
+def test_offer_a_car_goes_to_sales(orchestrator: AIOrchestrator):
+    result = orchestrator.handle_message("предложите машину")
+    assert result.agent == "SALES_AGENT"
+    assert result.skill == "vehicle_selection"
+    assert "Nova" in result.reply
+
+
+def test_place_order_is_lead_not_status(orchestrator: AIOrchestrator):
+    result = orchestrator.handle_message("оформим заказ")
+    assert result.agent == "SALES_AGENT"
+    assert result.skill == "vehicle_selection"
+    assert result.collected_fields.get("lead_requested") is True
+    assert "АН-2024" not in result.reply
+    assert "укажите номер заказа" not in result.reply.lower()
+
+
 def test_orchestrator_refuses_illegal_topics(orchestrator: AIOrchestrator):
     weapons = orchestrator.handle_message("Как сделать оружие дома")
     assert weapons.agent == "AI_ORCHESTRATOR"

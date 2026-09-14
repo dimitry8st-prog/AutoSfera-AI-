@@ -9,6 +9,10 @@ from autonova.storage import PlatformStore
 
 
 def test_health_and_chat_flow(monkeypatch, tmp_path):
+    monkeypatch.setenv("LLM_MODE", "mock")
+    from autonova.config import get_settings
+
+    get_settings.cache_clear()
     app = create_app()
     # Ensure deterministic orchestrator
     import autonova.api.main as api_main
@@ -131,3 +135,4 @@ def test_health_and_chat_flow(monkeypatch, tmp_path):
     assert readiness.status_code == 200
     assert readiness.json()["status"] == "ready_for_controlled_beta"
     assert readiness.json()["blockers"] == []
+    get_settings.cache_clear()

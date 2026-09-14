@@ -179,6 +179,10 @@ def _lead_requested(text: str) -> bool:
             "передай менеджеру",
             "передать менеджеру",
             "заявку менеджеру",
+            "оформим заказ",
+            "оформить заказ",
+            "оформи заказ",
+            "оформим заявку",
             "свяжите с менеджером",
             "свяжи с менеджером",
             "пусть менеджер",
@@ -236,7 +240,7 @@ def _looks_like_vehicle_query(text: str) -> bool:
     return any(
         token in lowered
         for token in (
-            "купи", "подобр", "побер", "кроссовер", "седан", "фургон",
+            "купи", "продай", "продать", "подобр", "побер", "кроссовер", "седан", "фургон",
             "машин", "модель", "комплектац", "бюджет", "каталог", "nova",
         )
     )
@@ -248,7 +252,9 @@ def _catalog_blob(chunks: list[RetrievedChunk], ctx: dict[str, Any] | None = Non
         return "\n".join(preferred)
     kb = (ctx or {}).get("kb")
     message = str((ctx or {}).get("message") or "")
-    if kb is not None and _looks_like_vehicle_query(message):
+    if kb is not None and (
+        _looks_like_vehicle_query(message) or _lead_requested(message)
+    ):
         doc = kb.get("sales-models")
         if doc is not None:
             return doc.content
@@ -421,6 +427,12 @@ def vehicle_selection(message: str, chunks: list[RetrievedChunk], ctx: dict[str,
     if not ids and models:
         ids = ["sales-models"]
     if not models:
+        kb = (ctx or {}).get("kb")
+        doc = kb.get("sales-models") if kb is not None else None
+        if doc is not None:
+            models = _parse_catalog_models(doc.content)
+            ids = ["sales-models"]
+    if not models:
         text, ids, missing = _context_or_missing(
             chunks,
             "vehicle_selection",
@@ -521,17 +533,27 @@ def vehicle_selection(message: str, chunks: list[RetrievedChunk], ctx: dict[str,
         )
 
     lines = "\n".join(f"• {item['line']}." for item in models)
-    if not _looks_like_vehicle_query(utterance) and body is None and budget is None:
-        reply = (
-            "Похоже, это уже не подбор автомобиля. Могу показать каталог моделей, "
-            "подключить оформление сделки и документы либо сервис. Напишите, что нужно."
+    if not wants_lead and not _looks_like_vehicle_query(utterance) and body is None and budget is None:
+        return SkillResult(
+            "vehicle_selection",
+            "В базе знаний нет данных по этому вопросу. Передаю обращение сотруднику AutoSfera AI.",
+            escalated=True,
+            escalation_target="employee",
+            escalation_reason="нет данных в KB",
+            rag_ids=[],
         )
-        return SkillResult("vehicle_selection", reply, rag_ids=ids)
-    reply = (
-        "Помогу подобрать автомобиль. Актуальный демо-каталог AutoSfera:\n\n"
-        f"{lines}\n\n"
-        "Уточните бюджет, тип кузова и предпочтения по комплектации."
-    )
+    if wants_lead:
+        reply = (
+            "Приму заявку на автомобиль. Актуальный демо-каталог AutoSfera:\n\n"
+            f"{lines}\n\n"
+            "Уточните модель или бюджет, если есть предпочтения."
+        )
+    else:
+        reply = (
+            "Помогу подобрать автомобиль. Актуальный демо-каталог AutoSfera:\n\n"
+            f"{lines}\n\n"
+            "Уточните бюджет, тип кузова и предпочтения по комплектации."
+        )
     fields = {
         "vehicle": _extract_vehicle(combined),
         "customer_name": customer_name,
@@ -712,7 +734,7 @@ _KNOWN_ORDERS = {
 
 
 def order_status(message: str, chunks: list[RetrievedChunk], ctx: dict[str, Any]) -> SkillResult:
-    order_id = _extract_order_id(message)
+    order_id = _extract_order_id(_last_user_utterance(message) or message)
     ids = [c.document.id for c in chunks]
     if not order_id:
         return SkillResult(
@@ -918,7 +940,7 @@ def build_skill_registry() -> dict[str, Skill]:
             "Vehicle Selection",
             "SALES_AGENT",
             "Подбор автомобиля и комплектации",
-            ("купить", "подобрать", "побер", "кроссовер", "седан", "фургон", "машин", "модель", "комплектац", "бюджет", "млн", "доллар", "бакс"),
+            ("купить", "продай", "продать", "предложи", "подобрать", "побер", "кроссовер", "седан", "фургон", "машин", "модель", "комплектац", "бюджет", "млн", "доллар", "бакс"),
             vehicle_selection,
         ),
         Skill(
@@ -950,7 +972,7 @@ def build_skill_registry() -> dict[str, Skill]:
             "Order Status",
             "SUPPORT_AGENT",
             "Статус заказа",
-            ("статус", "заказ", "ан-2024", "где мой", "где моя", "где сейчас", "выдача", "машин"),
+            ("статус", "ан-2024", "где мой", "где моя", "где сейчас", "выдача"),
             order_status,
         ),
         Skill(

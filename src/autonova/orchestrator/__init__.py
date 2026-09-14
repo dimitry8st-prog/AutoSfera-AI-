@@ -142,6 +142,17 @@ _UNEXPECTED_TOPIC_KEYS = (
     "погода", "курс акци", "крипто", "рецепт", "футбол", "кино",
 )
 
+_NON_DEALER_PRODUCT_KEYS = (
+    "танк", "самолет", "самолёт", "вертолет", "вертолёт",
+    "ракет", "корабл", "яхт", "лодк", "велосипед", "мотоцикл",
+)
+
+_ANAPHORIC_FOLLOW_UP_RE = re.compile(
+    r"^(а |и |ну )?(какой|какая|какие|какое|каков|сколько|когда|где|"
+    r"куда|зачем|почему|ещё|еще|подробнее|уточни)(\s|$)",
+    re.IGNORECASE,
+)
+
 _OFF_CATALOG_KEYS = (
     "запчаст", "колес", "шины", "покрышк",
     "аккумулятор", "колодк",
@@ -211,10 +222,51 @@ def _unexpected_salon_topic(message: str) -> bool:
     return any(key in lowered for key in _UNEXPECTED_TOPIC_KEYS)
 
 
+def _unknown_catalog_request(message: str) -> bool:
+    """True when the user asks to sell/find something the demo salon does not carry."""
+    if _conversational_intent(message) is not None:
+        return False
+    lowered = message.lower().replace("ё", "е")
+    if any(key in lowered for key in _NON_DEALER_PRODUCT_KEYS):
+        return True
+    if (
+        _vehicle_topic(message)
+        or _budget_topic(message)
+        or any(
+            key in lowered
+            for key in (
+                "заказ", "ан-2024", "гарант", "сервис", "кредит", "лизинг",
+                "документ", "договор", "сделк", "тест-драйв", "trade", "трейд",
+            )
+        )
+    ):
+        return False
+    asking_to_sell = bool(re.search(r"\b(продай|продать|продайте|продажа)\b", lowered))
+    asking_if_in_stock = bool(
+        re.search(r"есть ли у вас", lowered) or re.search(r"у вас есть", lowered)
+    )
+    return asking_to_sell or asking_if_in_stock
+
+
+def _is_anaphoric_follow_up(message: str) -> bool:
+    """Short attribute questions like «а какой срок?» keep the current specialist."""
+    if _unknown_catalog_request(message) or _off_catalog_product(message):
+        return False
+    normalized = _normalize_conversational_phrase(message)
+    words = normalized.split()
+    if not words or len(words) > 8:
+        return False
+    if re.fullmatch(r"\d+([.,]\d+)?", "".join(words)):
+        return True
+    if normalized.startswith("что есть") or normalized.startswith("а что есть"):
+        return True
+    return bool(_ANAPHORIC_FOLLOW_UP_RE.match(normalized))
+
+
 def _off_scope_document_id(message: str) -> str | None:
     if _off_catalog_product(message):
         return "conversation-parts"
-    if _unexpected_salon_topic(message):
+    if _unexpected_salon_topic(message) or _unknown_catalog_request(message):
         return "conversation-off-scope"
     return None
 
@@ -251,9 +303,11 @@ _AGENT_INTENT_KEYS: tuple[tuple[str, tuple[str, ...]], ...] = (
         "анализ рынка",
     )),
     ("SALES_AGENT", (
-        "купить", "кроссовер", "седан", "кредит", "лизинг", "trade",
-        "тест-драйв", "nova", "b2b", "юридическ", "модел", "каталог",
-        "условия покуп", "вариант оплат", "приобретени",
+        "купить", "продай", "продать", "продайте", "машин", "предложи",
+        "кроссовер", "седан",
+        "кредит", "лизинг", "trade", "тест-драйв", "nova", "b2b",
+        "юридическ", "модел", "каталог", "условия покуп", "вариант оплат",
+        "приобретени",
     )),
     ("SUPPORT_AGENT", (
         "заказ", "ан-2024", "документ", "статус", "возврат", "инн",
@@ -268,8 +322,10 @@ _AGENT_INTENT_KEYS: tuple[tuple[str, tuple[str, ...]], ...] = (
 
 def _explicit_agent_intent(message: str, skills: SkillRouter | None = None) -> str | None:
     """Pick the strongest domain signal on this turn, including skill keywords."""
-    if _off_catalog_product(message):
+    if _off_catalog_product(message) or _unknown_catalog_request(message):
         return None
+    if re.search(r"оформ\w*\s+заказ", message.lower().replace("ё", "е")) and "статус" not in message.lower() and not re.search(r"ан-\d{4}-\d{4}", message.lower()):
+        return "SALES_AGENT"
     lowered = message.lower()
     hits: dict[str, float] = {agent: 0.0 for agent, _ in _AGENT_INTENT_KEYS}
     for agent, keys in _AGENT_INTENT_KEYS:
@@ -532,8 +588,8 @@ class AIOrchestrator:
         # internal graph state in the user-visible reply.
         if (
             state.get("routing_reason") == "session_continuity"
+            and _is_anaphoric_follow_up(message)
             and _explicit_agent_intent(message, self.skills) is None
-            and len(_normalize_conversational_phrase(message).split()) <= 8
         ):
             previous_user_message = next(
                 (
@@ -773,6 +829,7 @@ class AIOrchestrator:
 
         off_scope_id = _off_scope_document_id(message)
         if off_scope_id is not None:
+            session.active_agent = None
             return self._reply_from_orchestrator_document(
                 message,
                 session,

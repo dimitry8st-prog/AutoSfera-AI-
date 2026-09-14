@@ -12,6 +12,7 @@ RiskLevel = Literal["low", "medium", "high"]
 _DOMAIN_KEYS: dict[str, tuple[str, ...]] = {
     "SALES_AGENT": (
         "купить", "покупк", "приобрет", "условия покупки", "вариант оплат",
+        "продай", "продать", "продайте", "машин", "предложи",
         "кроссовер", "седан", "кредит", "лизинг", "trade", "трейд",
         "тест-драйв", "nova", "b2b", "модел", "каталог",
     ),
@@ -71,6 +72,26 @@ def _normalize(message: str) -> str:
     return " ".join(re.findall(r"[a-zA-Zа-яА-ЯёЁ0-9-]+", message.lower().replace("ё", "е")))
 
 
+def _new_order_application(message: str) -> bool:
+    lowered = message.lower().replace("ё", "е")
+    if "статус" in lowered or re.search(r"ан-\d{4}-\d{4}", lowered):
+        return False
+    return bool(re.search(r"оформ\w*\s+заказ", lowered))
+
+
+def _vehicle_offer_request(message: str) -> bool:
+    lowered = message.lower().replace("ё", "е")
+    return any(
+        phrase in lowered
+        for phrase in (
+            "предложите машину",
+            "предложи машину",
+            "предложить машину",
+            "предложите авто",
+        )
+    )
+
+
 def _domain_scores(message: str) -> dict[str, int]:
     lowered = message.lower().replace("ё", "е")
     scores = {
@@ -79,6 +100,12 @@ def _domain_scores(message: str) -> dict[str, int]:
     }
     if re.search(r"(?<![а-яa-z])то(?![а-яa-z])", lowered):
         scores["SERVICE_AGENT"] += 1
+    if _new_order_application(message):
+        scores["SALES_AGENT"] += 2
+        scores["SUPPORT_AGENT"] = 0
+    if _vehicle_offer_request(message):
+        scores["SALES_AGENT"] += 2
+        scores["SUPPORT_AGENT"] = 0
     return scores
 
 
