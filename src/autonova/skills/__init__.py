@@ -83,6 +83,19 @@ _SKILL_SECTIONS: dict[str, tuple[str, ...]] = {
     "competitor_research": ("internal", "sales", "company"),
 }
 
+# Canonical KB cards when RAG misses a short specialist query («когда ТО»).
+_SKILL_FALLBACK_IDS: dict[str, tuple[str, ...]] = {
+    "trade_in": ("sales-trade-in",),
+    "credit_leasing": ("finance-credit", "finance-leasing", "faq-sales-credit"),
+    "test_drive_booking": ("sales-test-drive",),
+    "documentation_support": ("support-documents", "faq-support-docs"),
+    "warranty_consultation": ("service-warranty", "faq-service-warranty"),
+    "service_booking": ("service-booking",),
+    "maintenance_consultation": ("service-maintenance", "faq-service-to"),
+    "internal_knowledge": ("internal-sales-process", "internal-escalation"),
+    "process_lookup": ("internal-sales-process",),
+}
+
 
 def _pick_chunks(
     chunks: list[RetrievedChunk],
@@ -124,11 +137,32 @@ def _pick_chunks(
     return unique
 
 
+def _spoken_kb_content(content: str) -> str:
+    """Use the answer side of a RAG Q/A card when the document is stored as В/О."""
+    match = re.search(r"(?:^|\s)О:\s*(.*)\Z", content.strip(), flags=re.DOTALL)
+    if match:
+        return match.group(1).strip()
+    return content.strip()
+
+
+def _fallback_skill_documents(skill_id: str, ctx: dict[str, Any] | None) -> list[Any]:
+    kb = (ctx or {}).get("kb")
+    if kb is None:
+        return []
+    docs = []
+    for document_id in _SKILL_FALLBACK_IDS.get(skill_id, ()):
+        document = kb.get(document_id)
+        if document is not None:
+            docs.append(document)
+    return docs
+
+
 def _context_or_missing(
     chunks: list[RetrievedChunk],
     skill_id: str = "",
     limit: int = 2,
     prefer_ids: tuple[str, ...] = (),
+    ctx: dict[str, Any] | None = None,
 ) -> tuple[str, list[str], bool]:
     picked = (
         _pick_chunks(chunks, skill_id, limit=limit, prefer_ids=prefer_ids)
@@ -136,13 +170,20 @@ def _context_or_missing(
         else []
     )
     if not picked:
+        fallback = _fallback_skill_documents(skill_id, ctx)
+        if fallback:
+            return (
+                "\n\n".join(_spoken_kb_content(doc.content) for doc in fallback[:limit]),
+                [doc.id for doc in fallback[:limit]],
+                False,
+            )
         return (
             "В базе знаний нет данных по этому вопросу. "
             "Я передам обращение сотруднику AutoSfera AI.",
             [],
             True,
         )
-    parts = [c.document.content.strip() for c in picked]
+    parts = [_spoken_kb_content(c.document.content) for c in picked]
     ids = [c.document.id for c in picked]
     return "\n\n".join(parts), ids, False
 
@@ -207,7 +248,8 @@ def _extract_order_id(text: str) -> str | None:
 
 
 _CATALOG_MODEL_RE = re.compile(
-    r"(Nova\s+(?:Comfort|Drive|Cargo|Classic))\s*\(([^)]+)\)\s*от\s+([\d\s]+)\s*руб",
+    r"(Nova\s+(?:Comfort|Drive|Cargo|Classic))\s*\(([^)]+)\)\s*от\s+([\d\s]+)\s*руб\.?"
+    r"(?:,\s*(?:комплектации\s+)?([A-Za-z]+(?:\s*/\s*[A-Za-z]+)*))?",
     re.IGNORECASE,
 )
 _BODY_ALIASES: tuple[tuple[str, str], ...] = (
@@ -269,15 +311,64 @@ def _parse_catalog_models(text: str) -> list[dict[str, Any]]:
     models: list[dict[str, Any]] = []
     for match in _CATALOG_MODEL_RE.finditer(text):
         price = int(re.sub(r"\s+", "", match.group(3)))
+        trim_blob = (match.group(4) or "").strip()
+        trims = [part.strip() for part in trim_blob.split("/") if part.strip()]
         models.append(
             {
                 "name": re.sub(r"\s+", " ", match.group(1)).title().replace("Nova", "Nova"),
                 "body": match.group(2).strip().lower(),
                 "price": price,
-                "line": match.group(0).strip(),
+                "line": match.group(0).strip().rstrip(".,;"),
+                "trims": trims,
             }
         )
     return models
+
+
+def _format_trims(trims: list[str]) -> str:
+    if not trims:
+        return "в каталоге не указаны"
+    if len(trims) == 1:
+        return trims[0]
+    return ", ".join(trims[:-1]) + " и " + trims[-1]
+
+
+def _reuse_vehicle_constraints(utterance: str) -> bool:
+    """Keep body/budget from earlier turns only for a real vehicle follow-up."""
+    if _looks_like_vehicle_query(utterance) or _lead_requested(utterance):
+        return True
+    if _extract_phone(utterance) or _extract_customer_name(utterance):
+        return True
+    lowered = utterance.lower().replace("ё", "е")
+    words = re.findall(r"[a-zA-Zа-яА-ЯёЁ0-9]+", lowered)
+    if not words or len(words) > 8:
+        return False
+    if any(
+        key in lowered
+        for key in (
+            "администратор", "сотрудник", "оператор", "директор",
+            "козел", "козёл", "идиот", "дурак",
+        )
+    ):
+        return False
+    joined = " ".join(words)
+    if re.fullmatch(r"\d+([.,]\d+)?", "".join(words)):
+        return True
+    if _extract_body_type(utterance):
+        return True
+    if any(
+        key in lowered
+        for key in ("доллар", "руб", "бюджет", "млн", "бакс", "евро", "цена", "стоим")
+    ):
+        return True
+    if joined.startswith("что есть") or joined.startswith("а что есть"):
+        return True
+    return bool(
+        re.match(
+            r"^(а |и |ну )?(какой|какая|какие|какое|каков|сколько|ещё|еще|подробнее|уточни|цвет)(\s|$)",
+            joined,
+        )
+    )
 
 
 def _user_constraint_text(message: str, ctx: dict[str, Any]) -> str:
@@ -438,6 +529,7 @@ def vehicle_selection(message: str, chunks: list[RetrievedChunk], ctx: dict[str,
             "vehicle_selection",
             limit=2,
             prefer_ids=("sales-models",),
+            ctx=ctx,
         )
         if missing:
             return SkillResult(
@@ -457,13 +549,52 @@ def vehicle_selection(message: str, chunks: list[RetrievedChunk], ctx: dict[str,
             rag_ids=ids,
         )
 
-    combined = _user_constraint_text(message, ctx)
+    combined = (
+        _user_constraint_text(message, ctx)
+        if _reuse_vehicle_constraints(utterance)
+        else utterance
+    )
     body = _extract_body_type(combined)
     budget = _extract_budget(combined)
     phone = _extract_phone(combined)
     customer_name = _extract_customer_name(combined)
     wants_lead = _lead_requested(combined)
+    named = _extract_vehicle(combined)
     matches = [m for m in models if _model_matches(m, body, budget)]
+    asks_trim = "комплектац" in utterance.lower().replace("ё", "е")
+
+    if asks_trim:
+        if matches:
+            targets = matches
+        elif named:
+            targets = [m for m in models if named.lower() in str(m["name"]).lower()] or models
+        else:
+            targets = models
+        trim_lines = []
+        for item in targets:
+            trim_lines.append(
+                f"• {item['name']} ({item['body']}) — комплектации {_format_trims(item.get('trims') or [])}, "
+                f"от {_format_price(int(item['price']))} руб."
+            )
+        reply = (
+            "В демо-каталоге AutoSfera комплектации такие:\n\n"
+            + "\n".join(trim_lines)
+            + "\n\nМогу записать на тест-драйв или передать заявку менеджеру."
+        )
+        return SkillResult(
+            "vehicle_selection",
+            reply,
+            rag_ids=ids,
+            collected_fields={
+                key: value
+                for key, value in {
+                    "body_type": body,
+                    "budget": budget,
+                    "vehicle": targets[0]["name"] if len(targets) == 1 else named,
+                }.items()
+                if value is not None
+            },
+        )
 
     if body or budget is not None:
         if matches:
@@ -595,7 +726,7 @@ def _extract_mileage(text: str) -> str | None:
 
 
 def trade_in(message: str, chunks: list[RetrievedChunk], ctx: dict[str, Any]) -> SkillResult:
-    text, ids, missing = _context_or_missing(chunks, "trade_in")
+    text, ids, missing = _context_or_missing(chunks, "trade_in", ctx=ctx)
     if missing:
         return SkillResult(
             "trade_in",
@@ -653,6 +784,7 @@ def credit_leasing(message: str, chunks: list[RetrievedChunk], ctx: dict[str, An
         "credit_leasing",
         limit=1,
         prefer_ids=tuple(prefer_ids),
+        ctx=ctx,
     )
     if missing:
         return SkillResult(
@@ -692,7 +824,7 @@ def credit_leasing(message: str, chunks: list[RetrievedChunk], ctx: dict[str, An
 
 
 def test_drive_booking(message: str, chunks: list[RetrievedChunk], ctx: dict[str, Any]) -> SkillResult:
-    text, ids, _ = _context_or_missing(chunks, "test_drive_booking")
+    text, ids, _ = _context_or_missing(chunks, "test_drive_booking", ctx=ctx)
     combined = _user_constraint_text(message, ctx)
     phone = _extract_phone(combined)
     vehicle = _extract_vehicle(combined)
@@ -762,7 +894,7 @@ def order_status(message: str, chunks: list[RetrievedChunk], ctx: dict[str, Any]
 
 
 def documentation_support(message: str, chunks: list[RetrievedChunk], ctx: dict[str, Any]) -> SkillResult:
-    text, ids, missing = _context_or_missing(chunks, "documentation_support")
+    text, ids, missing = _context_or_missing(chunks, "documentation_support", ctx=ctx)
     if missing:
         return SkillResult(
             "documentation_support",
@@ -776,7 +908,7 @@ def documentation_support(message: str, chunks: list[RetrievedChunk], ctx: dict[
 
 
 def customer_faq(message: str, chunks: list[RetrievedChunk], ctx: dict[str, Any]) -> SkillResult:
-    text, ids, missing = _context_or_missing(chunks, "customer_faq")
+    text, ids, missing = _context_or_missing(chunks, "customer_faq", ctx=ctx)
     if missing:
         return SkillResult(
             "customer_faq",
@@ -803,7 +935,7 @@ def support_escalation(message: str, chunks: list[RetrievedChunk], ctx: dict[str
 # --- Service skills ---
 
 def warranty_consultation(message: str, chunks: list[RetrievedChunk], ctx: dict[str, Any]) -> SkillResult:
-    text, ids, missing = _context_or_missing(chunks, "warranty_consultation", limit=1)
+    text, ids, missing = _context_or_missing(chunks, "warranty_consultation", limit=1, ctx=ctx)
     if missing:
         return SkillResult(
             "warranty_consultation",
@@ -833,7 +965,7 @@ def warranty_consultation(message: str, chunks: list[RetrievedChunk], ctx: dict[
 
 
 def service_booking(message: str, chunks: list[RetrievedChunk], ctx: dict[str, Any]) -> SkillResult:
-    text, ids, _ = _context_or_missing(chunks, "service_booking", limit=1)
+    text, ids, _ = _context_or_missing(chunks, "service_booking", limit=1, ctx=ctx)
     combined = _user_constraint_text(message, ctx)
     phone = _extract_phone(combined)
     vehicle = _extract_vehicle(combined)
@@ -863,7 +995,7 @@ def service_booking(message: str, chunks: list[RetrievedChunk], ctx: dict[str, A
 
 
 def maintenance_consultation(message: str, chunks: list[RetrievedChunk], ctx: dict[str, Any]) -> SkillResult:
-    text, ids, missing = _context_or_missing(chunks, "maintenance_consultation", limit=1)
+    text, ids, missing = _context_or_missing(chunks, "maintenance_consultation", limit=1, ctx=ctx)
     if missing:
         return SkillResult(
             "maintenance_consultation",
@@ -890,7 +1022,7 @@ def service_escalation(message: str, chunks: list[RetrievedChunk], ctx: dict[str
 # --- Employee skills ---
 
 def internal_knowledge(message: str, chunks: list[RetrievedChunk], ctx: dict[str, Any]) -> SkillResult:
-    text, ids, missing = _context_or_missing(chunks, "internal_knowledge", limit=2)
+    text, ids, missing = _context_or_missing(chunks, "internal_knowledge", limit=2, ctx=ctx)
     if missing:
         return SkillResult(
             "internal_knowledge", text, escalated=True,
@@ -901,13 +1033,13 @@ def internal_knowledge(message: str, chunks: list[RetrievedChunk], ctx: dict[str
 
 
 def sales_coaching(message: str, chunks: list[RetrievedChunk], ctx: dict[str, Any]) -> SkillResult:
-    text, ids, missing = _context_or_missing(chunks, "sales_coaching", limit=2)
+    text, ids, missing = _context_or_missing(chunks, "sales_coaching", limit=2, ctx=ctx)
     reply = f"{text}\n\nСледующий шаг: уточните потребность клиента и зафиксируйте договорённость в заявке."
     return SkillResult("sales_coaching", reply, escalated=missing, escalation_target="sales_manager" if missing else None, rag_ids=ids)
 
 
 def process_lookup(message: str, chunks: list[RetrievedChunk], ctx: dict[str, Any]) -> SkillResult:
-    text, ids, missing = _context_or_missing(chunks, "process_lookup", limit=2)
+    text, ids, missing = _context_or_missing(chunks, "process_lookup", limit=2, ctx=ctx)
     return SkillResult("process_lookup", text, escalated=missing, escalation_target="department_manager" if missing else None, rag_ids=ids)
 
 
@@ -1020,7 +1152,7 @@ def build_skill_registry() -> dict[str, Skill]:
             "Maintenance Consultation",
             "SERVICE_AGENT",
             "Консультации по ТО и эксплуатации",
-            ("техобслуж", "техобслуживание", "обслуживан", "масло", "фильтр", "эксплуатац", "регламент"),
+            ("техобслуж", "техобслуживание", "обслуживан", "масло", "фильтр", "эксплуатац", "регламент", "то"),
             maintenance_consultation,
         ),
         Skill(

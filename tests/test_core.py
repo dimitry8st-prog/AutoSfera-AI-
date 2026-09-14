@@ -423,6 +423,71 @@ def test_orchestrator_refuses_profanity(orchestrator: AIOrchestrator):
     assert "нецензурн" in result.reply.lower() or "оскорблен" in result.reply.lower()
 
 
+def test_insult_after_off_scope_does_not_dump_catalog(orchestrator: AIOrchestrator):
+    first = orchestrator.handle_message("Нужен фургон до 10 млн")
+    tanks = orchestrator.handle_message("Продай танк", session_id=first.session_id)
+    insult = orchestrator.handle_message("Ты козел", session_id=first.session_id)
+
+    assert first.agent == "SALES_AGENT"
+    assert tanks.agent == "AI_ORCHESTRATOR"
+    assert insult.agent == "AI_ORCHESTRATOR"
+    assert insult.skill == "safety_refusal"
+    assert insult.routing_reason == "safety_abuse"
+    assert "Nova" not in insult.reply
+    assert "фургон" not in insult.reply.lower()
+    assert "оскорблен" in insult.reply.lower() or "нецензурн" in insult.reply.lower()
+
+
+def test_administrator_after_sales_is_human_handoff(orchestrator: AIOrchestrator):
+    first = orchestrator.handle_message("Нужен фургон до 10 млн")
+    second = orchestrator.handle_message("А где администратор", session_id=first.session_id)
+
+    assert first.agent == "SALES_AGENT"
+    assert second.agent == "AI_ORCHESTRATOR"
+    assert second.skill == "common_phrases"
+    assert second.rag_ids == ["conversation-human"]
+    assert "Nova Cargo" not in second.reply
+    assert "сотрудник" in second.reply.lower() or "специалист" in second.reply.lower()
+
+
+def test_cargo_trim_follow_up_answers_from_catalog(orchestrator: AIOrchestrator):
+    first = orchestrator.handle_message("Нужен фургон до 10 млн")
+    second = orchestrator.handle_message("Какая комплектация есть", session_id=first.session_id)
+
+    assert first.agent == "SALES_AGENT"
+    assert "Nova Cargo" in first.reply
+    assert second.agent == "SALES_AGENT"
+    assert second.skill == "vehicle_selection"
+    assert "Base" in second.reply
+    assert "Standard" in second.reply
+    assert "какая комплектация нужна" not in second.reply.lower()
+
+
+def test_to_question_after_sales_uses_service_kb(orchestrator: AIOrchestrator):
+    first = orchestrator.handle_message("Нужен фургон до 10 млн")
+    second = orchestrator.handle_message("Когда проходить ТО?", session_id=first.session_id)
+
+    assert second.agent == "SERVICE_AGENT"
+    assert second.skill == "maintenance_consultation"
+    assert second.routing_reason == "topic_switch"
+    assert "15 000" in second.reply or "15000" in second.reply
+    assert "Nova Cargo" not in second.reply
+
+
+def test_order_status_after_sales_uses_support_kb(orchestrator: AIOrchestrator):
+    first = orchestrator.handle_message("Нужен фургон до 10 млн")
+    second = orchestrator.handle_message(
+        "Статус заказа АН-2024-0512",
+        session_id=first.session_id,
+    )
+
+    assert second.agent == "SUPPORT_AGENT"
+    assert second.skill == "order_status"
+    assert "АН-2024-0512" in second.reply
+    assert "предпродажн" in second.reply.lower()
+    assert "Nova Cargo" not in second.reply
+
+
 def test_automatic_gearbox_is_not_a_weapon_refusal(orchestrator: AIOrchestrator):
     result = orchestrator.handle_message("Нужна коробка автомат на седан")
     assert result.skill != "safety_refusal"

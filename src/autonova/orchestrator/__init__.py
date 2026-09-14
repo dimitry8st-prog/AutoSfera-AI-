@@ -90,6 +90,9 @@ _CONVERSATIONAL_PHRASES: dict[str, frozenset[str]] = {
         "подготовь обращение к сотруднику", "подготовьте обращение к сотруднику",
         "подготовь обращение", "подготовьте обращение",
         "обращение к сотруднику",
+        "а где администратор", "где администратор", "позови администратора",
+        "позовите администратора", "нужен администратор", "где сотрудник",
+        "где оператор",
     }),
     "how_it_works": frozenset({
         "как ты работаешь", "как вы работаете", "как это работает",
@@ -133,7 +136,9 @@ _PROFANITY_RE = re.compile(
     r"бля(?:ть|дь)?|сука|суки|сучар\w*|хуй\w*|хуя\w*|хуе\w*|"
     r"пизд\w*|ебан\w*|ёбан\w*|ебат\w*|ебл\w*|мудак\w*|мудил\w*|"
     r"гондон\w*|пидор\w*|пидар\w*|чмо|залуп\w*|нахуй|похуй|охуе\w*|"
-    r"заеб\w*|fuck(?:ing)?|shit|asshole|bitch|cunt|dickhead"
+    r"заеб\w*|коз[её]л\w*|идиот\w*|дурак\w*|дурочк\w*|дебил\w*|"
+    r"кретин\w*|тупиц\w*|урод(?:ин)?\w*|тварь|скотина|гандон\w*|"
+    r"fuck(?:ing)?|shit|asshole|bitch|cunt|dickhead"
     r")(?![а-яa-z0-9])",
     re.IGNORECASE,
 )
@@ -148,9 +153,16 @@ _NON_DEALER_PRODUCT_KEYS = (
 )
 
 _ANAPHORIC_FOLLOW_UP_RE = re.compile(
-    r"^(а |и |ну )?(какой|какая|какие|какое|каков|сколько|когда|где|"
+    r"^(а |и |ну )?(какой|какая|какие|какое|каков|сколько|когда|"
     r"куда|зачем|почему|ещё|еще|подробнее|уточни)(\s|$)",
     re.IGNORECASE,
+)
+_ANAPHORIC_WHERE_RE = re.compile(r"^(а |и |ну )?где(\s|$)", re.IGNORECASE)
+_ANAPHORIC_WHERE_OK = (
+    "срок", "выдач", "заказ", "салон", "машин", "наход", "сервис", "мой", "моя",
+)
+_STAFF_PERSON_KEYS = (
+    "администратор", "сотрудник", "оператор", "директор", "человек", "специалист",
 )
 
 _OFF_CATALOG_KEYS = (
@@ -180,6 +192,11 @@ _CUSTOMER_HANDOFF_MARKERS = (
     "позовите сотрудника",
     "нужен сотрудник",
     "хочу сотрудника",
+    "администратор",
+    "где сотрудник",
+    "где оператор",
+    "позови директора",
+    "нужен директор",
 )
 
 _ORCHESTRATOR_COMPANY_FAQ_IDS = frozenset({
@@ -252,14 +269,20 @@ def _is_anaphoric_follow_up(message: str) -> bool:
     """Short attribute questions like «а какой срок?» keep the current specialist."""
     if _unknown_catalog_request(message) or _off_catalog_product(message):
         return False
+    if _safety_intent(message) or _customer_staff_handoff(message):
+        return False
     normalized = _normalize_conversational_phrase(message)
     words = normalized.split()
     if not words or len(words) > 8:
+        return False
+    if any(key in normalized for key in _STAFF_PERSON_KEYS):
         return False
     if re.fullmatch(r"\d+([.,]\d+)?", "".join(words)):
         return True
     if normalized.startswith("что есть") or normalized.startswith("а что есть"):
         return True
+    if _ANAPHORIC_WHERE_RE.match(normalized):
+        return any(token in normalized for token in _ANAPHORIC_WHERE_OK)
     return bool(_ANAPHORIC_FOLLOW_UP_RE.match(normalized))
 
 
