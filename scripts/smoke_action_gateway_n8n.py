@@ -43,12 +43,19 @@ def main() -> int:
 
     status, chat = request_json(
         "POST", "/api/chat",
-        {"message": "Запишите на тест-драйв Nova Drive, телефон +79990000000", "channel": "web"},
+        {
+            "message": (
+                "Хочу записаться на тест-драйв Nova Drive. Меня зовут Тестовый Клиент, "
+                "телефон +70000000000, завтра в 15:00."
+            ),
+            "channel": "web",
+        },
     )
     require(status == 200, f"chat failed: {status}")
     action_id = chat.get("action_id")
     require(bool(action_id), "chat did not create an action proposal")
     require(chat.get("action_status") == "waiting_approval", "action bypassed human approval")
+    require(chat.get("intake_state") == "saved" and chat.get("request_id"), "complete intake was not saved")
 
     status, auth = request_json(
         "POST", "/api/auth/token", {"username": "sales", "password": SALES_PASSWORD}
@@ -77,6 +84,11 @@ def main() -> int:
     result = job.get("result") or {}
     require(result.get("provider") == "n8n-sandbox", "callback did not come from the n8n sandbox")
     require(bool(result.get("external_id")), "n8n execution id is missing")
+
+    status, requests = request_json("GET", "/api/requests", token=token)
+    require(status == 200, f"request lookup failed: {status}")
+    saved = next((item for item in requests.get("items", []) if item["id"] == chat["request_id"]), None)
+    require(saved is not None and saved["status"] == "confirmed", "completed action did not confirm the saved intake")
 
     status, audit = request_json("GET", f"/api/actions/{action_id}/events", token=token)
     require(status == 200, f"audit lookup failed: {status}")
