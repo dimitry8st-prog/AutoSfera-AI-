@@ -109,6 +109,25 @@ def execute_action(store: Any, dealer_id: str, action_id: str) -> dict[str, Any]
 
 def _execute_demo_crm(store: Any, job: dict[str, Any]) -> dict[str, Any] | None:
     payload = job["payload"]
+    linked_request_id = payload.get("request_id")
+    if linked_request_id:
+        current = store.get_request(job["dealer_id"], linked_request_id)
+        if current is not None:
+            try:
+                result = {"provider": "demo_crm", "request_id": linked_request_id}
+                completed = store.finish_action_job(
+                    job["dealer_id"], job["id"], "completed", "demo-crm", result=result
+                )[0]
+                confirmed = confirm_saved_request(store, job) if completed and completed.get("status") == "completed" else current
+                logger.info(
+                    "action_completed dealer_id=%s action_id=%s trace_id=%s provider=demo_crm request_id=%s status=%s",
+                    job["dealer_id"], job["id"], job["trace_id"], linked_request_id,
+                    (confirmed or current).get("status"),
+                )
+                return completed
+            except Exception as exc:
+                logger.exception("Demo CRM action failed action=%s", job["id"])
+                return _fail(store, job, f"execution_failed: {type(exc).__name__}")
     try:
         request = store.create_request(
             job["dealer_id"],
@@ -125,6 +144,8 @@ def _execute_demo_crm(store: Any, job: dict[str, Any]) -> dict[str, Any] | None:
         completed = store.finish_action_job(
             job["dealer_id"], job["id"], "completed", "demo-crm", result=result
         )[0]
+        if completed and completed.get("status") == "completed":
+            confirm_saved_request(store, job)
         logger.info(
             "action_completed dealer_id=%s action_id=%s trace_id=%s provider=demo_crm request_id=%s",
             job["dealer_id"], job["id"], job["trace_id"], request["id"],
@@ -173,6 +194,22 @@ def _dispatch_n8n(store: Any, job: dict[str, Any]) -> dict[str, Any] | None:
             else:
                 return _fail(store, job, f"dispatch_failed: {type(exc).__name__}")
     return None
+
+
+def confirm_saved_request(store: Any, job: dict[str, Any]) -> dict[str, Any] | None:
+    """Move a saved intake to confirmed only after the controlled action succeeds."""
+    request_id = (job.get("payload") or {}).get("request_id")
+    if not request_id:
+        return None
+    current = store.get_request(job["dealer_id"], request_id)
+    if current is None or current.get("status") != "saved":
+        return current
+    updated = store.update_request(job["dealer_id"], request_id, status="confirmed")
+    logger.info(
+        "request_status dealer_id=%s request_id=%s to=confirmed",
+        job["dealer_id"], request_id,
+    )
+    return updated
 
 
 def _fail(store: Any, job: dict[str, Any], error: str) -> dict[str, Any] | None:

@@ -74,19 +74,21 @@ class PostgresPlatformStore:
         request_id = str(uuid4())
         now = self._now()
         source_ref = data.get("source_ref")
+        status = data.get("status") or "new"
         with self.connect() as db, db.cursor() as cur:
             cur.execute(
                 """INSERT INTO requests
                 (id, dealer_id, kind, customer_name, phone, vehicle, preferred_at,
-                 comment, status, source, created_at, updated_at, assigned_to, source_ref)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, 'new', %s, %s, %s, %s, %s)
+                 comment, status, source, created_at, updated_at, assigned_to, source_ref, session_id)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 ON CONFLICT (dealer_id, source_ref) WHERE source_ref IS NOT NULL
                 DO NOTHING
                 RETURNING *""",
                 (
                     request_id, dealer_id, kind, data.get("customer_name"), data.get("phone"),
                     data.get("vehicle"), data.get("preferred_at"), data.get("comment"),
-                    data.get("source", "web"), now, now, data.get("assigned_to"), source_ref,
+                    status, data.get("source", "web"), now, now, data.get("assigned_to"),
+                    source_ref, data.get("session_id"),
                 ),
             )
             row = cur.fetchone()
@@ -98,8 +100,37 @@ class PostgresPlatformStore:
                 row = cur.fetchone()
         return self._row(row) or {
             "id": request_id, "dealer_id": dealer_id, "kind": kind,
-            "status": "new", "created_at": now.isoformat(),
+            "status": status, "created_at": now.isoformat(),
         }
+
+    def get_request(self, dealer_id: str, request_id: str) -> dict[str, Any] | None:
+        with self.connect() as db, db.cursor() as cur:
+            cur.execute(
+                "SELECT * FROM requests WHERE id = %s AND dealer_id = %s",
+                (request_id, dealer_id),
+            )
+            return self._row(cur.fetchone())
+
+    def update_request_details(
+        self, dealer_id: str, request_id: str, **data: Any,
+    ) -> dict[str, Any] | None:
+        current = self.get_request(dealer_id, request_id)
+        if current is None or current.get("status") != "saved":
+            return current
+        assignments = ["updated_at = %s"]
+        values: list[Any] = [self._now()]
+        for key in ("customer_name", "phone", "vehicle", "preferred_at", "comment", "session_id"):
+            if key in data:
+                assignments.append(f"{key} = %s")
+                values.append(data[key])
+        values.extend([request_id, dealer_id])
+        with self.connect() as db, db.cursor() as cur:
+            cur.execute(
+                f"UPDATE requests SET {', '.join(assignments)} "
+                "WHERE id = %s AND dealer_id = %s AND status = 'saved' RETURNING *",
+                values,
+            )
+            return self._row(cur.fetchone()) or current
 
     def find_request_by_source_ref(self, dealer_id: str, source_ref: str) -> dict[str, Any] | None:
         with self.connect() as db, db.cursor() as cur:
@@ -148,18 +179,23 @@ class PostgresPlatformStore:
         channel: str,
         active_agent: str | None,
         history: list[dict[str, str]],
+        metadata: dict[str, Any] | None = None,
     ) -> None:
         with self.connect() as db, db.cursor() as cur:
             cur.execute(
                 """INSERT INTO sessions
-                (session_id, dealer_id, channel, active_agent, history_json, updated_at)
-                VALUES (%s, %s, %s, %s, %s, %s)
+                (session_id, dealer_id, channel, active_agent, history_json, metadata_json, updated_at)
+                VALUES (%s, %s, %s, %s, %s, %s, %s)
                 ON CONFLICT(session_id, dealer_id) DO UPDATE SET
                     channel = excluded.channel,
                     active_agent = excluded.active_agent,
                     history_json = excluded.history_json,
+                    metadata_json = excluded.metadata_json,
                     updated_at = excluded.updated_at""",
-                (session_id, dealer_id, channel, active_agent, Jsonb(history), self._now()),
+                (
+                    session_id, dealer_id, channel, active_agent, Jsonb(history),
+                    Jsonb(metadata or {}), self._now(),
+                ),
             )
 
     def load_session(self, dealer_id: str, session_id: str) -> dict[str, Any] | None:
@@ -171,6 +207,7 @@ class PostgresPlatformStore:
             data = self._row(cur.fetchone())
         if data is not None:
             data["history"] = data.pop("history_json", [])
+            data["metadata"] = data.pop("metadata_json", None) or {}
         return data
 
     def create_research_job(
@@ -299,6 +336,17 @@ class PostgresPlatformStore:
                 )
                 row = cur.fetchone()
         return self._decode_action_row(row) or {}, created
+
+    def update_action_payload(
+        self, dealer_id: str, action_id: str, payload: dict[str, Any],
+    ) -> dict[str, Any] | None:
+        with self.connect() as db, db.cursor() as cur:
+            cur.execute(
+                """UPDATE action_jobs SET payload_json = %s, updated_at = %s
+                WHERE id = %s AND dealer_id = %s AND status = 'waiting_approval'""",
+                (Jsonb(payload), self._now(), action_id, dealer_id),
+            )
+        return self.get_action_job(dealer_id, action_id)
 
     def get_action_job(self, dealer_id: str, action_id: str) -> dict[str, Any] | None:
         with self.connect() as db, db.cursor() as cur:

@@ -85,7 +85,7 @@ def test_rejected_action_never_creates_request(tmp_path) -> None:
     assert store.list_requests("main-salon") == []
 
 
-def test_chat_proposes_action_without_creating_request(monkeypatch, tmp_path) -> None:
+def test_chat_collects_test_drive_before_saving(monkeypatch, tmp_path) -> None:
     client, store = _client(monkeypatch, tmp_path)
     response = client.post(
         "/api/chat",
@@ -93,9 +93,12 @@ def test_chat_proposes_action_without_creating_request(monkeypatch, tmp_path) ->
     )
     assert response.status_code == 200
     body = response.json()
+    assert body["agent"] == "SALES_AGENT"
     assert body["skill"] == "test_drive_booking"
-    assert body["action_status"] == "waiting_approval"
+    assert body["intake_state"] == "collecting"
+    assert body["action_id"] is None
     assert body["request_id"] is None
+    assert "не хватает" in body["reply"].lower()
     assert store.list_requests("main-salon") == []
 
 

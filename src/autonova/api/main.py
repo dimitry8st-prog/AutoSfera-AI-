@@ -16,7 +16,8 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from autonova.agents import AGENT_META
-from autonova.action_gateway import can_approve, execute_action
+from autonova.action_gateway import can_approve, confirm_saved_request, execute_action
+from autonova.intake import BOOKING_KINDS, apply_booking_intake, missing_booking_labels
 from autonova.beta import beta_readiness
 from autonova.auth import (
     Actor, create_token, decode_token, verify_action_webhook,
@@ -33,6 +34,25 @@ from autonova.runtime_identity import runtime_identity
 
 logger = get_logger("autonova.api")
 bearer = HTTPBearer(auto_error=False)
+
+
+def _can_manage_request(role: str, kind: str) -> bool:
+    if role in {"admin", "employee"}:
+        return True
+    if role == "sales" and kind in {"lead", "test_drive"}:
+        return True
+    return role == "service" and kind == "service"
+
+
+def _client_request_view(item: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "id": item["id"],
+        "kind": item["kind"],
+        "status": item["status"],
+        "vehicle": item.get("vehicle"),
+        "preferred_at": item.get("preferred_at"),
+        "assigned_to": item.get("assigned_to"),
+    }
 
 
 def optional_actor(
@@ -82,6 +102,7 @@ class ChatResponse(BaseModel):
     model_tier: str | None = None
     routing_intent: str | None = None
     routing_risk: str | None = None
+    intake_state: str | None = None
 
 
 class ResetRequest(BaseModel):
@@ -104,7 +125,10 @@ class LoginRequest(BaseModel):
 
 
 class RequestUpdate(BaseModel):
-    status: str | None = Field(default=None, pattern="^(new|qualified|scheduled|assigned|done|cancelled)$")
+    status: str | None = Field(
+        default=None,
+        pattern="^(new|qualified|scheduled|assigned|done|cancelled|saved|confirmed)$",
+    )
     assigned_to: str | None = Field(default=None, max_length=120)
 
 
@@ -225,6 +249,8 @@ def create_app() -> FastAPI:
                 "kinds": ["lead", "test_drive", "service"],
                 "action_types": ["create_lead", "create_test_drive", "create_service"],
             },
+            "research": {"connected": bool(settings.research_webhook_url)},
+            "demo_mode": settings.llm_mode != "openai" or settings.action_gateway_mode == "mock",
         }
 
     @app.get("/ready")
@@ -323,25 +349,56 @@ def create_app() -> FastAPI:
         except PermissionError as exc:
             raise HTTPException(status_code=403, detail=str(exc)) from exc
         store = get_store()
-        store.record_conversation(
-            dealer_id=actor.dealer_id,
-            session_id=result.session_id,
-            channel=result.channel,
-            agent=result.agent,
-            skill=result.skill,
-            user_message=body.message,
-            assistant_reply=result.reply,
-            escalated=result.escalated,
-        )
         request_id = None
         action_id = None
         action_status = None
+        intake_state = None
+        reply = result.reply
         request_kind = {
             "vehicle_selection": "lead",
             "test_drive_booking": "test_drive",
             "service_booking": "service",
         }.get(result.skill or "")
-        should_propose = request_kind and result.collected_fields.get("phone")
+        booking_kind = BOOKING_KINDS.get(result.skill or "")
+        if booking_kind:
+            missing = missing_booking_labels(booking_kind, result.collected_fields)
+            if missing:
+                intake_state = "collecting"
+            else:
+                intake = apply_booking_intake(
+                    store,
+                    actor.dealer_id,
+                    actor.subject,
+                    result.session_id,
+                    booking_kind,
+                    result.collected_fields,
+                )
+                saved = intake["request"]
+                request_id = saved["id"]
+                intake_state = intake["intake_state"]
+                action = intake.get("action") or {}
+                action_id = action.get("id")
+                action_status = action.get("status")
+                if intake_state == "saved" and action_status == "failed":
+                    reply += (
+                        f"\n\nЗаявка {request_id} сохранена. Подтверждение не выполнено, "
+                        "запись не подтверждена."
+                    )
+                elif intake_state == "saved":
+                    reply += (
+                        f"\n\nЗаявка {request_id} сохранена. Статус: сохранена. "
+                        "Запись не подтверждена — её проверит сотрудник."
+                    )
+                elif intake_state == "confirmed":
+                    reply += (
+                        f"\n\nЗаявка {request_id} уже подтверждена. Повторно она не создаётся."
+                    )
+                elif intake_state == "cancelled":
+                    reply += (
+                        f"\n\nЗаявка {request_id} отклонена. Новая запись по этому диалогу "
+                        "не подтверждена."
+                    )
+        should_propose = request_kind == "lead" and result.collected_fields.get("phone")
         if request_kind == "lead":
             should_propose = bool(
                 should_propose
@@ -375,13 +432,28 @@ def create_app() -> FastAPI:
                 "created" if _created else "reused", actor.dealer_id, action_id,
                 action["trace_id"], request_kind, result.session_id,
             )
+        if reply != result.reply:
+            session = orch.sessions.get(result.session_id)
+            if session is not None and session.history:
+                session.history[-1]["content"] = reply
+                orch._persist(session)
+        store.record_conversation(
+            dealer_id=actor.dealer_id,
+            session_id=result.session_id,
+            channel=result.channel,
+            agent=result.agent,
+            skill=result.skill,
+            user_message=body.message,
+            assistant_reply=reply,
+            escalated=result.escalated,
+        )
         return ChatResponse(
             session_id=result.session_id,
             channel=result.channel,
             agent=result.agent,
             agent_label=result.agent_label,
             greeting=result.greeting,
-            reply=result.reply,
+            reply=reply,
             skill=result.skill,
             escalated=result.escalated,
             escalation_target=result.escalation_target,
@@ -395,6 +467,7 @@ def create_app() -> FastAPI:
             model_tier=result.model_tier,
             routing_intent=result.routing_intent,
             routing_risk=result.routing_risk,
+            intake_state=intake_state,
         )
 
     @app.post("/api/reset")
@@ -427,21 +500,66 @@ def create_app() -> FastAPI:
         safe_limit = max(1, min(limit, 500))
         return {"items": get_store().list_requests(actor.dealer_id, safe_limit)}
 
+    @app.get("/api/requests/{request_id}")
+    def get_business_request(
+        request_id: str,
+        session_id: str | None = None,
+        actor: Actor = Depends(optional_actor),
+    ) -> dict[str, Any]:
+        item = get_store().get_request(actor.dealer_id, request_id)
+        if item is None:
+            raise HTTPException(status_code=404, detail="Заявка не найдена. Проверьте номер.")
+        if actor.role == "guest":
+            if not session_id or session_id != item.get("session_id"):
+                raise HTTPException(status_code=403, detail="Нет доступа к этой заявке")
+            return _client_request_view(item)
+        if not _can_manage_request(actor.role, item["kind"]):
+            raise HTTPException(status_code=403, detail="Нет доступа к этой заявке")
+        return item
+
     @app.patch("/api/requests/{request_id}")
     def update_business_request(
         request_id: str,
         body: RequestUpdate,
         actor: Actor = Depends(require_roles("admin", "sales", "service", "employee")),
     ) -> dict[str, Any]:
-        item = get_store().update_request(
+        store = get_store()
+        current = store.get_request(actor.dealer_id, request_id)
+        if current is None:
+            raise HTTPException(status_code=404, detail="Заявка не найдена. Проверьте номер.")
+        if not _can_manage_request(actor.role, current["kind"]):
+            raise HTTPException(status_code=403, detail="Нет доступа к этой заявке")
+        if body.status == "confirmed" and current.get("status") != "confirmed":
+            raise HTTPException(
+                status_code=409,
+                detail="Статус «подтверждена» ставится только после успешного подтверждения действия.",
+            )
+        item = store.update_request(
             actor.dealer_id,
             request_id,
             status=body.status,
             assigned_to=body.assigned_to,
         )
-        if item is None:
-            raise HTTPException(status_code=404, detail="request not found")
-        return item
+        logger.info(
+            "request_status dealer_id=%s request_id=%s from=%s to=%s actor_role=%s",
+            actor.dealer_id, request_id, current.get("status"),
+            (item or {}).get("status"), actor.role,
+        )
+        return item or current
+
+    @app.get("/api/session/{session_id}")
+    def read_session(session_id: str) -> dict[str, Any]:
+        loaded = get_store().load_session(get_settings().dealer_id, session_id)
+        if loaded is None:
+            raise HTTPException(status_code=404, detail="Диалог не найден")
+        metadata = loaded.get("metadata") or {}
+        return {
+            "session_id": session_id,
+            "channel": loaded.get("channel"),
+            "active_agent": loaded.get("active_agent"),
+            "history": loaded.get("history") or [],
+            "collected_fields": metadata.get("collected_fields") or {},
+        }
 
     @app.get("/api/analytics/summary")
     def analytics_summary(
@@ -533,6 +651,16 @@ def create_app() -> FastAPI:
         )
         if body.decision == "approve":
             background.add_task(execute_action, store, actor.dealer_id, action_id)
+        elif body.decision == "reject":
+            request_id = (job.get("payload") or {}).get("request_id")
+            if request_id:
+                current = store.get_request(actor.dealer_id, request_id)
+                if current and current.get("status") == "saved":
+                    store.update_request(actor.dealer_id, request_id, status="cancelled")
+                    logger.info(
+                        "request_status dealer_id=%s request_id=%s to=cancelled",
+                        actor.dealer_id, request_id,
+                    )
         return {"job": updated}
 
     @app.post("/api/actions/{action_id}/retry")
@@ -594,6 +722,8 @@ def create_app() -> FastAPI:
             "action_callback dealer_id=%s action_id=%s trace_id=%s status=%s accepted=%s",
             dealer_id, action_id, trace_id, status, changed,
         )
+        if changed and status == "completed" and updated is not None:
+            confirm_saved_request(store, updated)
         return {"accepted": changed, "job": updated}
 
     @app.get("/api/inventory")

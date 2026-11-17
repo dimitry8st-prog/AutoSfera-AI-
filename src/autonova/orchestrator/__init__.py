@@ -11,7 +11,7 @@ from autonova.agents import AGENT_META, AgentReply, BaseAgent, build_agents, loa
 from autonova.knowledge import KnowledgeBase
 from autonova.llm import LLMClient, extract_json_object, get_llm_client
 from autonova.logging import DialogueLogger, get_logger, setup_logging
-from autonova.model_router import ModelRouter, RouterDecision
+from autonova.model_router import ModelRouter, RouterDecision, booking_agent
 from autonova.rag import RAGRetriever, build_retriever
 from autonova.skills import SkillRouter, build_skill_registry
 from autonova.config import get_settings
@@ -343,8 +343,24 @@ _AGENT_INTENT_KEYS: tuple[tuple[str, tuple[str, ...]], ...] = (
 )
 
 
+def _keeps_booking_context(message: str) -> bool:
+    """A name, phone, time or model should not abandon an open booking."""
+    if booking_agent(message):
+        return False
+    lowered = message.lower().replace("ё", "е")
+    blockers = (
+        "купить", "покуп", "заказ", "статус", "гарант", "кредит", "лизинг",
+        "ремонт", "trade", "трейд", "документ", "договор", "сервис",
+        "диагност", "техобслуж",
+    )
+    return not any(key in lowered for key in blockers)
+
+
 def _explicit_agent_intent(message: str, skills: SkillRouter | None = None) -> str | None:
     """Pick the strongest domain signal on this turn, including skill keywords."""
+    forced_booking = booking_agent(message)
+    if forced_booking is not None:
+        return forced_booking
     if _off_catalog_product(message) or _unknown_catalog_request(message):
         return None
     if re.search(r"оформ\w*\s+заказ", message.lower().replace("ё", "е")) and "статус" not in message.lower() and not re.search(r"ан-\d{4}-\d{4}", message.lower()):
@@ -467,6 +483,7 @@ class AIOrchestrator:
                 channel=persisted["channel"] if persisted else channel,
                 active_agent=persisted["active_agent"] if persisted else None,
                 history=persisted["history"] if persisted else [],
+                metadata=dict(persisted.get("metadata") or {}) if persisted else {},
             )
             logger.info("Created session %s channel=%s", sid, channel)
         return self.sessions[sid]
@@ -478,6 +495,18 @@ class AIOrchestrator:
         logger.info("Reset session %s", session_id)
         return self.sessions[session_id]
 
+    def _remember_fields(self, session: SessionState, fields: dict[str, Any] | None) -> dict[str, Any]:
+        merged = {
+            key: value
+            for key, value in (session.metadata.get("collected_fields") or {}).items()
+            if value not in (None, "")
+        }
+        for key, value in (fields or {}).items():
+            if value not in (None, ""):
+                merged[key] = value
+        session.metadata["collected_fields"] = merged
+        return merged
+
     def _persist(self, session: SessionState) -> None:
         if self.store:
             self.store.save_session(
@@ -486,6 +515,7 @@ class AIOrchestrator:
                 session.channel,
                 session.active_agent,
                 session.history,
+                session.metadata,
             )
 
     def route(self, message: str, model_tier: str = "simple") -> dict[str, str]:
@@ -550,6 +580,9 @@ class AIOrchestrator:
         session = state["session"]
         decision = self.model_router.decide(state["message"], session.active_agent)
         explicit_agent = decision.agent or _explicit_agent_intent(state["message"], self.skills)
+        collecting = (session.metadata.get("collected_fields") or {}).get("booking_kind")
+        if collecting and _keeps_booking_context(state["message"]):
+            explicit_agent = None
         should_route = session.active_agent is None or (
             explicit_agent is not None and explicit_agent != session.active_agent
         )
@@ -628,6 +661,7 @@ class AIOrchestrator:
             message,
             history=state["session"].history,
             dialogue=state["dialogue"],
+            collected_fields=dict(state["session"].metadata.get("collected_fields") or {}),
         )
         return {"agent_reply": reply}
 
@@ -652,6 +686,7 @@ class AIOrchestrator:
             "approval_required": agent_reply.escalated,
             "model_route": final_model_route,
         })
+        collected = self._remember_fields(session, agent_reply.collected_fields)
         self._persist(session)
         return {"result": TurnResult(
             session_id=session.session_id,
@@ -664,7 +699,7 @@ class AIOrchestrator:
             escalated=agent_reply.escalated,
             escalation_target=agent_reply.escalation_target,
             rag_ids=agent_reply.rag_ids,
-            collected_fields=agent_reply.collected_fields,
+            collected_fields=collected,
             routing_reason=state.get("routing_reason"),
             model_route=final_model_route,
             model_tier=decision.model_tier if decision else None,
@@ -994,6 +1029,7 @@ class AIOrchestrator:
             message,
             history=session.history,
             dialogue=dialogue,
+            collected_fields=dict(session.metadata.get("collected_fields") or {}),
         )
 
         reply_text = agent_reply.text
@@ -1002,6 +1038,7 @@ class AIOrchestrator:
 
         session.history.append({"role": "user", "content": message})
         session.history.append({"role": "assistant", "content": reply_text})
+        collected = self._remember_fields(session, agent_reply.collected_fields)
         self._persist(session)
 
         return TurnResult(
@@ -1015,7 +1052,7 @@ class AIOrchestrator:
             escalated=agent_reply.escalated,
             escalation_target=agent_reply.escalation_target,
             rag_ids=agent_reply.rag_ids,
-            collected_fields=agent_reply.collected_fields,
+            collected_fields=collected,
             routing_reason=routing_reason,
             model_route="human" if agent_reply.escalated else model_decision.route,
             model_tier=model_decision.model_tier,

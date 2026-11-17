@@ -25,6 +25,7 @@
     <section id="chatView" class="app-view active">
       <div class="chat-panel">
         <div class="section-head"><div><span class="eyebrow">Четыре специализированных агента</span><h1>От вопроса клиента до действия менеджера</h1></div><div><button id="resetBtn" type="button">Новый чат</button><button id="kbBtn" type="button" class="ghost">База знаний</button></div></div>
+        <p id="modeBanner" class="disclaimer">Проверяем режим работы…</p>
         <div id="messages" class="messages" aria-live="polite"></div>
         <div class="composer">
           <div class="quick" id="quickReplies"><button type="button" data-q="Хочу купить кроссовер">Подобрать авто</button><button type="button" data-q="Статус заказа АН-2024-0512">Статус заказа</button><button type="button" data-q="Вопрос по гарантии на кузов">Гарантия</button><button type="button" data-q="Лизинг для юридических лиц на 5 авто">Лизинг B2B</button><button type="button" class="employee-only hidden" data-q="Исследуй конкурента и подготовь черновик">Конкурент</button></div>
@@ -57,7 +58,7 @@
     <section id="researchView" class="app-view hidden">
       <div class="section-head"><div><span class="eyebrow">Human-in-the-loop</span><h1>Исследования конкурентов</h1></div></div>
       <form id="researchForm" class="research-form"><input id="researchQuery" required minlength="5" placeholder="Компания, продукт или сайт конкурента" /><button type="submit">Создать задачу</button></form>
-      <p class="disclaimer">n8n управляет доставкой и повторами, Langflow выполняет ограниченный анализ. Результат не публикуется без approve.</p>
+      <p class="disclaimer">Внешний поиск конкурентов не подключён, пока не задан RESEARCH_WEBHOOK_URL. Чат не показывает шаблонный отчёт как выполненное исследование. Черновик попадает в базу знаний только после явного approve.</p>
       <div id="researchJobs" class="job-list"></div>
     </section>
   </main>

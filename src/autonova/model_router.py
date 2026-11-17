@@ -92,6 +92,32 @@ def _vehicle_offer_request(message: str) -> bool:
     )
 
 
+_TEST_DRIVE_MARKERS = (
+    "тест-драйв", "тест драйв", "пробная поездка", "записать на тест", "запись на тест",
+)
+_SERVICE_BOOKING_MARKERS = (
+    "записаться в сервис", "запись в сервис", "записать в сервис",
+    "записаться на сервис", "запись на сервис", "записать на сервис",
+    "записаться на то", "запись на то", "записать на то",
+)
+
+
+def booking_agent(message: str) -> str | None:
+    """Separate a test drive from a service visit before generic keyword scoring.
+
+    «Записаться» alone is not a service request. A test-drive phrase wins even
+    when the same sentence also contains «записаться».
+    """
+    lowered = message.lower().replace("ё", "е")
+    if any(marker in lowered for marker in _TEST_DRIVE_MARKERS):
+        return "SALES_AGENT"
+    if any(marker in lowered for marker in _SERVICE_BOOKING_MARKERS):
+        return "SERVICE_AGENT"
+    if "сервис" in lowered and "запис" in lowered:
+        return "SERVICE_AGENT"
+    return None
+
+
 def _domain_scores(message: str) -> dict[str, int]:
     lowered = message.lower().replace("ё", "е")
     scores = {
@@ -157,6 +183,16 @@ class ModelRouter:
             return RouterDecision(
                 route="clarify", intent="unknown", reason="ambiguous_request",
                 risk="low",
+            )
+
+        forced_booking = booking_agent(message)
+        if forced_booking is not None:
+            return RouterDecision(
+                route="simple_model",
+                intent="test_drive" if forced_booking == "SALES_AGENT" else "service_booking",
+                reason="booking_domain",
+                agent=forced_booking,
+                model_tier="simple",
             )
 
         scores = _domain_scores(message)

@@ -11,6 +11,11 @@ from uuid import uuid4
 from autonova.config import get_settings
 
 
+REQUEST_STATUSES = frozenset({
+    "new", "qualified", "scheduled", "assigned", "done", "cancelled", "saved", "confirmed",
+})
+
+
 class PlatformStore:
     """SQLite pilot store. Every business row is scoped by dealer_id."""
 
@@ -153,6 +158,8 @@ class PlatformStore:
             self._ensure_column(db, "requests", "updated_at", "TEXT")
             self._ensure_column(db, "requests", "assigned_to", "TEXT")
             self._ensure_column(db, "requests", "source_ref", "TEXT")
+            self._ensure_column(db, "requests", "session_id", "TEXT")
+            self._ensure_column(db, "sessions", "metadata_json", "TEXT NOT NULL DEFAULT '{}'")
             db.execute(
                 "CREATE UNIQUE INDEX IF NOT EXISTS ux_requests_source_ref "
                 "ON requests(dealer_id, source_ref) WHERE source_ref IS NOT NULL"
@@ -196,18 +203,21 @@ class PlatformStore:
         request_id = str(uuid4())
         created_at = self._now()
         source_ref = data.get("source_ref")
+        status = data.get("status") or "new"
+        if status not in REQUEST_STATUSES:
+            raise ValueError("unsupported request status")
         with self.connect() as db:
             cursor = db.execute(
                 """INSERT INTO requests
                 (id, dealer_id, kind, customer_name, phone, vehicle, preferred_at,
-                comment, status, source, created_at, updated_at, assigned_to, source_ref)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'new', ?, ?, ?, ?, ?)
+                comment, status, source, created_at, updated_at, assigned_to, source_ref, session_id)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT (dealer_id, source_ref) WHERE source_ref IS NOT NULL DO NOTHING""",
                 (
                     request_id, dealer_id, kind, data.get("customer_name"),
                     data.get("phone"), data.get("vehicle"), data.get("preferred_at"),
-                    data.get("comment"), data.get("source", "web"), created_at,
-                    created_at, data.get("assigned_to"), source_ref,
+                    data.get("comment"), status, data.get("source", "web"), created_at,
+                    created_at, data.get("assigned_to"), source_ref, data.get("session_id"),
                 ),
             )
             if cursor.rowcount == 0 and source_ref:
@@ -215,9 +225,43 @@ class PlatformStore:
                     "SELECT * FROM requests WHERE dealer_id = ? AND source_ref = ?",
                     (dealer_id, source_ref),
                 ).fetchone()
-                if row:
-                    return dict(row)
-        return {"id": request_id, "dealer_id": dealer_id, "kind": kind, "status": "new", "created_at": created_at}
+            else:
+                row = db.execute(
+                    "SELECT * FROM requests WHERE id = ? AND dealer_id = ?",
+                    (request_id, dealer_id),
+                ).fetchone()
+        return dict(row) if row else {
+            "id": request_id, "dealer_id": dealer_id, "kind": kind, "status": status,
+            "created_at": created_at,
+        }
+
+    def get_request(self, dealer_id: str, request_id: str) -> dict[str, Any] | None:
+        with self.connect() as db:
+            row = db.execute(
+                "SELECT * FROM requests WHERE id = ? AND dealer_id = ?",
+                (request_id, dealer_id),
+            ).fetchone()
+        return dict(row) if row else None
+
+    def update_request_details(
+        self, dealer_id: str, request_id: str, **data: Any,
+    ) -> dict[str, Any] | None:
+        current = self.get_request(dealer_id, request_id)
+        if current is None or current.get("status") != "saved":
+            return current
+        assignments = ["updated_at = ?"]
+        values: list[Any] = [self._now()]
+        for key in ("customer_name", "phone", "vehicle", "preferred_at", "comment", "session_id"):
+            if key in data:
+                assignments.append(f"{key} = ?")
+                values.append(data[key])
+        values.extend([request_id, dealer_id])
+        with self.connect() as db:
+            db.execute(
+                f"UPDATE requests SET {', '.join(assignments)} WHERE id = ? AND dealer_id = ? AND status = 'saved'",
+                values,
+            )
+        return self.get_request(dealer_id, request_id)
 
     def find_request_by_source_ref(self, dealer_id: str, source_ref: str) -> dict[str, Any] | None:
         with self.connect() as db:
@@ -270,18 +314,25 @@ class PlatformStore:
         channel: str,
         active_agent: str | None,
         history: list[dict[str, str]],
+        metadata: dict[str, Any] | None = None,
     ) -> None:
         with self.connect() as db:
             db.execute(
                 """INSERT INTO sessions
-                (session_id, dealer_id, channel, active_agent, history_json, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?)
+                (session_id, dealer_id, channel, active_agent, history_json, metadata_json, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(session_id, dealer_id) DO UPDATE SET
                     channel = excluded.channel,
                     active_agent = excluded.active_agent,
                     history_json = excluded.history_json,
+                    metadata_json = excluded.metadata_json,
                     updated_at = excluded.updated_at""",
-                (session_id, dealer_id, channel, active_agent, json.dumps(history), self._now()),
+                (
+                    session_id, dealer_id, channel, active_agent,
+                    json.dumps(history, ensure_ascii=False),
+                    json.dumps(metadata or {}, ensure_ascii=False),
+                    self._now(),
+                ),
             )
 
     def load_session(self, dealer_id: str, session_id: str) -> dict[str, Any] | None:
@@ -293,7 +344,12 @@ class PlatformStore:
         if not row:
             return None
         data = dict(row)
-        data["history"] = json.loads(data.pop("history_json"))
+        data["history"] = json.loads(data.pop("history_json") or "[]")
+        raw_meta = data.pop("metadata_json", "{}")
+        if isinstance(raw_meta, str):
+            data["metadata"] = json.loads(raw_meta or "{}")
+        else:
+            data["metadata"] = raw_meta or {}
         return data
 
     def create_research_job(
@@ -425,6 +481,17 @@ class PlatformStore:
                     (dealer_id, idempotency_key),
                 ).fetchone()
         return self._decode_action_row(row) or {}, created
+
+    def update_action_payload(
+        self, dealer_id: str, action_id: str, payload: dict[str, Any],
+    ) -> dict[str, Any] | None:
+        with self.connect() as db:
+            db.execute(
+                """UPDATE action_jobs SET payload_json = ?, updated_at = ?
+                WHERE id = ? AND dealer_id = ? AND status = 'waiting_approval'""",
+                (json.dumps(payload, ensure_ascii=False), self._now(), action_id, dealer_id),
+            )
+        return self.get_action_job(dealer_id, action_id)
 
     def get_action_job(self, dealer_id: str, action_id: str) -> dict[str, Any] | None:
         with self.connect() as db:

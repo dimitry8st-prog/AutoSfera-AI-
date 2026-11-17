@@ -23,7 +23,31 @@
 
 Локальная end-to-end проверка через изолированный n8n sandbox запускается командой `scripts/setup_n8n_sandbox.sh`. Она проверяет путь от предложения действия до подписанного callback и аудита; подробности — в [`integrations/n8n/README.md`](integrations/n8n/README.md).
 
-> Пакет Python пока сохраняет техническое имя `autonova`, чтобы не ломать существующие интеграции. Публичный продукт и API называются AutoSfera AI.
+## Где интерфейс и где сервер
+
+В этом репозитории интерфейс и сервер — одно приложение. Каталог `frontend/` отдаётся FastAPI с `/` и вызывает `/api/chat`, `/api/requests` и `/api/actions`. Отдельный сайт `autosfera-ai-demo.ketwolsheb.chatgpt.site` этим кодом не обслуживается: у текущей среды нет доступа к его исходникам и к публикации Sites. Изменения ниже относятся к локальному серверу и его странице.
+
+Рабочий сценарий заявки:
+
+1. `собираем данные` — диалог и поля хранятся в сессии, заявка ещё не создана.
+2. `сохранена` — обязательные поля собраны, заявка записана со стабильным id, действие ждёт сотрудника.
+3. `подтверждена` — сотрудник подтвердил действие, а демо-CRM или callback внешней системы успешно завершили его.
+
+Пока статус не `confirmed`, ответы не сообщают, что клиент уже записан. Повтор того же диалога возвращает ту же заявку. Чужая сессия и неподходящая роль получают отказ. Неизвестный номер заказа не заменяется статусом `АН-2024-0512`.
+
+Поиск конкурентов остаётся неподключённым, пока пуст `RESEARCH_WEBHOOK_URL`. В этом режиме задача получает статус `not_connected` и не публикуется в базу знаний.
+
+Пакет Python сохраняет техническое имя `autonova`. Публичный продукт и API называются AutoSfera AI.
+
+Ручная проверка основного сценария:
+
+1. `python -m pip install -e ".[dev]"` и `uvicorn autonova.api.main:app --app-dir src`.
+2. Открыть `http://127.0.0.1:8000`. В шапке должен быть виден режим LLM и пометка, что поиск конкурентов не подключён.
+3. Отправить «Хочу записаться на тест-драйв Nova Drive», затем имя, затем телефон и время. До полного набора полей заявки в кабинете нет.
+4. Войти как `sales` паролем из своего `.env` и подтвердить действие. Статус заявки становится `confirmed`. До этого шага чат не говорит, что запись уже состоялась.
+5. Повторить диалог сервиса фразой «Хочу записаться на сервис» и проверить отдельную заявку `service`.
+6. Запросить статус `АН-2024-7777` и убедиться, что ответ говорит о неизвестном заказе.
+7. Перезапустить сервер с тем же `DATABASE_PATH` и тем же `session_id`: поля и заявка остаются.
 
 ## Возможности версии 2.0
 
@@ -236,29 +260,22 @@ cp .env.example .env
 | `LOG_LEVEL` | `INFO` | уровень логов |
 | `LOGS_DIR` | `logs/` | каталог логов |
 | `DIALOGUES_DIR` | `data/dialogues/` | JSONL диалогов |
-| `AUTH_SECRET` | demo-only | подпись JWT; обязательно заменить перед публикацией |
-| `DEMO_ADMIN_PASSWORD` | `admin-demo` | локальный вход администратора без `.env` |
-| `DEMO_EMPLOYEE_PASSWORD` | `employee-demo` | локальный вход сотрудника без `.env` |
-| `DEMO_SALES_PASSWORD` | `sales-demo` | локальный вход менеджера продаж без `.env` |
-| `DEMO_SERVICE_PASSWORD` | `service-demo` | локальный вход сервиса без `.env` |
-| `CORS_ORIGINS` | localhost | разрешённые источники через запятую |
-| `RESEARCH_WEBHOOK_URL` | — | защищённый webhook n8n |
+| `AUTH_SECRET` | задаётся в `.env` | подпись JWT; не публиковать |
+| `DEMO_ADMIN_PASSWORD` | задаётся в `.env` | локальный вход администратора |
+| `DEMO_EMPLOYEE_PASSWORD` | задаётся в `.env` | локальный вход сотрудника |
+| `DEMO_SALES_PASSWORD` | задаётся в `.env` | локальный вход менеджера продаж |
+| `DEMO_SERVICE_PASSWORD` | задаётся в `.env` | локальный вход сервиса |
+| `CORS_ORIGINS` | локальные origin | разрешённые источники через запятую |
+| `RESEARCH_WEBHOOK_URL` | пусто | защищённый webhook n8n; пустое значение означает, что поиск не подключён |
 | `ACTION_GATEWAY_MODE` | `mock` | `mock` для демо-CRM или `n8n` |
-| `ACTION_WEBHOOK_URL` | — | production webhook n8n для одобренных действий |
-| `ACTION_CALLBACK_URL` | sandbox default | URL callback API → n8n; в sandbox `http://api:8000/api/actions/callback` |
-| `ACTION_WEBHOOK_SECRET` | demo secret | отдельный HMAC-секрет Action Gateway |
-| `RESEARCH_WEBHOOK_SECRET` | demo-only | HMAC-подпись запросов и callback |
+| `ACTION_WEBHOOK_URL` | пусто | webhook n8n для одобренных действий |
+| `ACTION_CALLBACK_URL` | пусто | URL callback API; секрет и адрес задаются только на сервере |
+| `ACTION_WEBHOOK_SECRET` | задаётся в `.env` | HMAC-секрет Action Gateway |
+| `RESEARCH_WEBHOOK_SECRET` | задаётся в `.env` | HMAC-подпись запросов и callback |
 
-Пример `.env` для реального LLM:
+Имена переменных и безопасные локальные значения перечислены в `.env.example`. Секреты, пароли и ключи в этот файл не копируются.
 
-```env
-DEALER_ID=main-salon
-DEALER_NAME=AutoSfera Demo Salon
-LLM_MODE=openai
-OPENAI_API_KEY=sk-...
-OPENAI_MODEL=gpt-4o-mini
-LOG_LEVEL=INFO
-```
+Для реального LLM в `.env` задаются `LLM_MODE=openai`, `OPENAI_API_KEY` и `OPENAI_MODEL`. Ключ остаётся только на сервере.
 
 Настройки также читаются из `src/autonova/config.py` (пути к KB и prompts).
 В режиме `LLM_MODE=openai` переменные `OPENAI_SIMPLE_MODEL` и

@@ -18,7 +18,16 @@ def dispatch_research_job(store: PlatformStore, job: dict[str, Any]) -> None:
     """Send a bounded research job to n8n; never calls Langflow directly."""
     settings = get_settings()
     if not settings.research_webhook_url:
-        logger.info("Research job %s queued; webhook is not configured", job["id"])
+        logger.info(
+            "research_not_connected dealer_id=%s job_id=%s",
+            job.get("dealer_id"), job.get("id"),
+        )
+        store.update_research_job(
+            job["dealer_id"],
+            job["id"],
+            status="not_connected",
+            error="research_webhook_not_configured",
+        )
         return
     payload = {
         "job_id": job["id"],

@@ -72,8 +72,15 @@ class BaseAgent:
         message: str,
         history: list[dict[str, str]] | None = None,
         dialogue: DialogueLogger | None = None,
+        collected_fields: dict[str, Any] | None = None,
     ) -> AgentReply:
         history = history or []
+        skill_ctx = {
+            "history": history,
+            "kb": self.rag.kb,
+            "message": message,
+            "collected_fields": collected_fields or {},
+        }
         chunks = self.rag.retrieve(message, self.key)
         lowered = message.lower().replace("ё", "е")
         if any(phrase in lowered for phrase in ("игнорируй правила", "покажи персональные данные", "раскрой персональные данные")):
@@ -99,7 +106,7 @@ class BaseAgent:
                 self.key,
                 message,
                 chunks,
-                ctx={"history": history, "kb": self.rag.kb, "message": message},
+                ctx=skill_ctx,
             )
             if not result.reply.strip():
                 result = SkillResult(
@@ -114,7 +121,7 @@ class BaseAgent:
                 self.key,
                 message,
                 chunks,
-                ctx={"history": history, "kb": self.rag.kb},
+                ctx=skill_ctx,
             )
         preface = (
             f"Здравствуйте! Я {self.label} — ИИ-ассистент AutoSfera AI.\n\n"

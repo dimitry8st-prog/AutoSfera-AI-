@@ -5,6 +5,7 @@ from dataclasses import dataclass, field
 from typing import Any, Callable
 
 from autonova.logging import get_logger
+from autonova.model_router import booking_agent
 from autonova.rag import RAGRetriever, RetrievedChunk
 
 logger = get_logger("autonova.skills")
@@ -190,19 +191,73 @@ def _context_or_missing(
 
 def _extract_phone(text: str) -> str | None:
     match = re.search(r"(\+?\d[\d\-\s()]{9,}\d)", text)
-    return match.group(1).strip() if match else None
+    if not match:
+        return None
+    compact = re.sub(r"[^\d+]", "", match.group(1))
+    return compact or None
 
 
 def _extract_customer_name(text: str) -> str | None:
     patterns = (
-        r"(?:меня\s+зовут|имя|фио)\s*[:—-]?\s*([А-ЯЁ][а-яё]+(?:\s+[А-ЯЁ][а-яё]+){0,2})",
+        r"(?:меня\s+зовут|имя|фио)\s*[:—-]?\s*([А-ЯЁ][а-яё]+(?:[ \t]+[А-ЯЁ][а-яё]+){0,2})",
         r"(?:я\s+|клиент\s*[:—-]?\s*)([А-ЯЁ][а-яё]+)(?=\s*[,.;]|\s+телефон)",
     )
     for pattern in patterns:
         match = re.search(pattern, text, flags=re.IGNORECASE)
         if match:
             return re.sub(r"\s+", " ", match.group(1)).strip()
+    lines = [line.strip() for line in text.splitlines() if line.strip()]
+    last = lines[-1] if lines else ""
+    if re.fullmatch(r"[А-ЯЁ][а-яё]+(?:\s+[А-ЯЁ][а-яё]+){1,2}", last):
+        return last
     return None
+
+
+def _extract_preferred_at(text: str) -> str | None:
+    patterns = (
+        r"(?:сегодня|завтра|послезавтра)(?:\s+в\s+\d{1,2}(?::\d{2})?)?",
+        r"\d{1,2}[./]\d{1,2}(?:[./]\d{2,4})?(?:\s+в\s+\d{1,2}(?::\d{2})?)?",
+        r"\bв\s+\d{1,2}:\d{2}\b",
+        r"\b\d{1,2}:\d{2}\b",
+    )
+    found: list[str] = []
+    for pattern in patterns:
+        found.extend(re.findall(pattern, text, flags=re.IGNORECASE))
+    if not found:
+        return None
+    return re.sub(r"\s+", " ", found[-1]).strip()
+
+
+def _extract_issue(text: str) -> str | None:
+    match = re.search(r"проблем[аыуе]?\s*[:\-—]?\s*([^.\n]{3,80})", text, flags=re.IGNORECASE)
+    if match:
+        return re.sub(r"\s+", " ", match.group(1)).strip(" ,.;")
+    lowered = text.lower().replace("ё", "е")
+    for key in ("замена масла", "диагностик", "техобслуживан", "тормоз", "стук", "шум"):
+        if key in lowered:
+            return key
+    return None
+
+
+def _merge_collected(prior: dict[str, Any] | None, extracted: dict[str, Any]) -> dict[str, Any]:
+    merged = {
+        key: value
+        for key, value in (prior or {}).items()
+        if value not in (None, "")
+    }
+    for key, value in extracted.items():
+        if value not in (None, ""):
+            merged[key] = value
+    return merged
+
+
+_BOOKING_FIELD_LABELS = {
+    "customer_name": "ФИО",
+    "phone": "телефон",
+    "vehicle": "модель",
+    "preferred_at": "дату и время",
+    "vehicle_or_issue": "модель или причину обращения",
+}
 
 
 def _lead_requested(text: str) -> bool:
@@ -823,17 +878,39 @@ def credit_leasing(message: str, chunks: list[RetrievedChunk], ctx: dict[str, An
     )
 
 
-def test_drive_booking(message: str, chunks: list[RetrievedChunk], ctx: dict[str, Any]) -> SkillResult:
-    text, ids, _ = _context_or_missing(chunks, "test_drive_booking", ctx=ctx)
+def _booking_fields(message: str, ctx: dict[str, Any], kind: str) -> dict[str, Any]:
     combined = _user_constraint_text(message, ctx)
-    phone = _extract_phone(combined)
-    vehicle = _extract_vehicle(combined)
-    fields = {key: value for key, value in {"phone": phone, "vehicle": vehicle}.items() if value}
-    if phone and vehicle:
+    extracted = {
+        "customer_name": _extract_customer_name(combined),
+        "phone": _extract_phone(combined),
+        "vehicle": _extract_vehicle(combined),
+        "preferred_at": _extract_preferred_at(combined),
+        "issue": _extract_issue(combined) if kind == "service" else None,
+        "booking_kind": kind,
+    }
+    return _merge_collected(ctx.get("collected_fields"), extracted)
+
+
+def _missing_booking_labels(kind: str, fields: dict[str, Any]) -> list[str]:
+    required = ("customer_name", "phone", "vehicle", "preferred_at") if kind == "test_drive" else (
+        "customer_name", "phone", "preferred_at",
+    )
+    missing = [name for name in required if not fields.get(name)]
+    if kind == "service" and not fields.get("vehicle") and not fields.get("issue"):
+        missing.append("vehicle_or_issue")
+    return [_BOOKING_FIELD_LABELS[name] for name in missing]
+
+
+def test_drive_booking(message: str, chunks: list[RetrievedChunk], ctx: dict[str, Any]) -> SkillResult:
+    relevant = [chunk for chunk in chunks if chunk.document.id == "sales-test-drive"]
+    text, ids, _ = _context_or_missing(relevant, "test_drive_booking", limit=1, ctx=ctx)
+    fields = _booking_fields(message, ctx, "test_drive")
+    missing = _missing_booking_labels("test_drive", fields)
+    if not missing:
         reply = (
             f"{text}\n\n"
-            f"Заявка на тест-драйв принята предварительно (телефон: {phone}). "
-            "Подтверждение выполнит менеджер."
+            "Данные для тест-драйва собраны. Заявку можно сохранить, "
+            "но запись не подтверждена, пока её не проверит менеджер."
         )
         return SkillResult(
             "test_drive_booking",
@@ -846,7 +923,9 @@ def test_drive_booking(message: str, chunks: list[RetrievedChunk], ctx: dict[str
         )
     reply = (
         f"{text}\n\n"
-        "Для записи укажите ФИО, телефон, модель и желаемые дату/время."
+        "Сейчас собираем данные для заявки на тест-драйв. "
+        f"Не хватает: {', '.join(missing)}. "
+        "Заявка не сохраняется, пока эти поля не собраны."
     )
     return SkillResult("test_drive_booking", reply, collected_fields=fields, rag_ids=ids)
 
@@ -871,8 +950,8 @@ def order_status(message: str, chunks: list[RetrievedChunk], ctx: dict[str, Any]
     if not order_id:
         return SkillResult(
             "order_status",
-            "Укажите номер заказа в формате АН-2024-XXXX. "
-            "Известные тестовые: АН-2024-0512, АН-2024-0388.",
+            "Укажите номер заказа в формате АН-ГГГГ-NNNN. "
+            "Без точного номера я не показываю статус другого заказа.",
             rag_ids=ids,
         )
     if order_id in _KNOWN_ORDERS:
@@ -884,7 +963,8 @@ def order_status(message: str, chunks: list[RetrievedChunk], ctx: dict[str, Any]
         )
     return SkillResult(
         "order_status",
-        f"Заказ {order_id} не найден в тестовой базе. Передаю обращение специалисту поддержки.",
+        f"Заказ {order_id} не найден. Проверьте номер: статус другого заказа не подставляется. "
+        "Могу передать обращение специалисту поддержки.",
         escalated=True,
         escalation_target="support_specialist",
         escalation_reason="неизвестный заказ",
@@ -965,17 +1045,15 @@ def warranty_consultation(message: str, chunks: list[RetrievedChunk], ctx: dict[
 
 
 def service_booking(message: str, chunks: list[RetrievedChunk], ctx: dict[str, Any]) -> SkillResult:
-    text, ids, _ = _context_or_missing(chunks, "service_booking", limit=1, ctx=ctx)
-    combined = _user_constraint_text(message, ctx)
-    phone = _extract_phone(combined)
-    vehicle = _extract_vehicle(combined)
-    fields = {key: value for key, value in {"phone": phone, "vehicle": vehicle}.items() if value}
-    if phone:
-        car = f", автомобиль {vehicle}" if vehicle else ""
+    relevant = [chunk for chunk in chunks if chunk.document.id == "service-booking"]
+    text, ids, _ = _context_or_missing(relevant, "service_booking", limit=1, ctx=ctx)
+    fields = _booking_fields(message, ctx, "service")
+    missing = _missing_booking_labels("service", fields)
+    if not missing:
         reply = (
             f"{text}\n\n"
-            f"Предварительная заявка на сервис принята (телефон: {phone}{car}). "
-            "Слот подтвердит сотрудник сервиса."
+            "Данные для сервиса собраны. Заявку можно сохранить, "
+            "но запись не подтверждена, пока её не проверит сотрудник сервиса."
         )
         return SkillResult(
             "service_booking",
@@ -986,10 +1064,11 @@ def service_booking(message: str, chunks: list[RetrievedChunk], ctx: dict[str, A
             collected_fields=fields,
             rag_ids=ids,
         )
-    missing_bits = [label for label, value in (("модель", vehicle), ("телефон", phone)) if not value]
     reply = (
         f"{text}\n\n"
-        f"Для записи укажите {', '.join(missing_bits) if missing_bits else 'дату и описание проблемы'}."
+        "Сейчас собираем данные для сервисной заявки. "
+        f"Не хватает: {', '.join(missing)}. "
+        "Заявка не сохраняется, пока эти поля не собраны."
     )
     return SkillResult("service_booking", reply, collected_fields=fields, rag_ids=ids)
 
@@ -1046,11 +1125,12 @@ def process_lookup(message: str, chunks: list[RetrievedChunk], ctx: dict[str, An
 def competitor_research(message: str, chunks: list[RetrievedChunk], ctx: dict[str, Any]) -> SkillResult:
     return SkillResult(
         "competitor_research",
-        "Запрос на исследование конкурента подготовлен. Создайте задачу в разделе "
-        "«Исследования»: внешний результат сохранится как черновик и попадёт в базу "
-        "знаний только после approve сотрудником.",
+        "Поиск конкурентов в этом контуре не подключён: чат не выполняет внешнее "
+        "исследование и не подставляет шаблонный отчёт. Сотрудник может создать задачу "
+        "в разделе «Исследования». Если вебхук n8n не настроен, задача останется "
+        "в состоянии «не подключено» и не попадёт в базу знаний.",
         rag_ids=[c.document.id for c in chunks],
-        metadata={"requires_research_job": True, "human_approval": True},
+        metadata={"requires_research_job": True, "human_approval": True, "research_connected": False},
     )
 
 
@@ -1203,10 +1283,23 @@ class SkillRouter:
         return [s for s in self.registry.values() if s.agent == agent_key]
 
     def select(self, agent_key: str, message: str, ctx: dict[str, Any] | None = None) -> Skill:
+        ctx = ctx or {}
+        collected = ctx.get("collected_fields") or {}
+        forced = booking_agent(message)
+        if forced == "SALES_AGENT" and agent_key == "SALES_AGENT" and "test_drive_booking" in self.registry:
+            return self.registry["test_drive_booking"]
+        if forced == "SERVICE_AGENT" and agent_key == "SERVICE_AGENT" and "service_booking" in self.registry:
+            return self.registry["service_booking"]
         candidates = self.skills_for_agent(agent_key)
         current_ranked = sorted(
             candidates, key=lambda s: s.match_score(message), reverse=True
         )
+        if current_ranked and current_ranked[0].match_score(message) == 0:
+            kind = collected.get("booking_kind")
+            if kind == "test_drive" and agent_key == "SALES_AGENT":
+                return self.registry["test_drive_booking"]
+            if kind == "service" and agent_key == "SERVICE_AGENT":
+                return self.registry["service_booking"]
         if current_ranked[0].match_score(message) > 0:
             best = current_ranked[0]
         else:
