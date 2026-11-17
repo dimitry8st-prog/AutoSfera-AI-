@@ -308,6 +308,23 @@ def _explicit_agent_intent(message: str, skills: SkillRouter | None = None) -> s
     return best_agent
 
 
+def _keeps_booking_context(session: SessionState, message: str) -> bool:
+    """Keep collecting a booking when the next line only fills a missing field."""
+    from autosfera.model_router import booking_agent
+
+    collected = session.metadata.get("collected_fields") or {}
+    skill = collected.get("booking_skill")
+    if skill not in {"test_drive_booking", "service_booking"}:
+        return False
+    if booking_agent(message):
+        return False
+    lowered = message.lower().replace("ё", "е")
+    blockers = ("купить", "заказ", "статус", "гарант", "кредит", "лизинг", "конкурент", "документ")
+    if skill == "test_drive_booking":
+        blockers = (*blockers, "сервис", "ремонт")
+    return not any(word in lowered for word in blockers)
+
+
 @dataclass
 class SessionState:
     session_id: str
@@ -394,6 +411,7 @@ class AIOrchestrator:
                 channel=persisted["channel"] if persisted else channel,
                 active_agent=persisted["active_agent"] if persisted else None,
                 history=persisted["history"] if persisted else [],
+                metadata=dict(persisted.get("metadata") or {}) if persisted else {},
             )
             logger.info("Created session %s channel=%s", sid, channel)
         return self.sessions[sid]
@@ -405,6 +423,14 @@ class AIOrchestrator:
         logger.info("Reset session %s", session_id)
         return self.sessions[session_id]
 
+    @staticmethod
+    def _remember_fields(session: SessionState, collected: dict[str, Any] | None) -> None:
+        prior = dict(session.metadata.get("collected_fields") or {})
+        for key, value in (collected or {}).items():
+            if value not in (None, ""):
+                prior[key] = value
+        session.metadata["collected_fields"] = prior
+
     def _persist(self, session: SessionState) -> None:
         if self.store:
             self.store.save_session(
@@ -413,6 +439,7 @@ class AIOrchestrator:
                 session.channel,
                 session.active_agent,
                 session.history,
+                session.metadata,
             )
 
     def route(self, message: str, model_tier: str = "simple") -> dict[str, str]:
@@ -479,6 +506,8 @@ class AIOrchestrator:
         session = state["session"]
         decision = self.model_router.decide(state["message"], session.active_agent)
         explicit_agent = decision.agent or _explicit_agent_intent(state["message"], self.skills)
+        if _keeps_booking_context(session, state["message"]):
+            explicit_agent = None
         should_route = session.active_agent is None or (
             explicit_agent is not None and explicit_agent != session.active_agent
         )
@@ -574,6 +603,7 @@ class AIOrchestrator:
             history=state["session"].history,
             dialogue=state["dialogue"],
             llm=llm,
+            collected_fields=dict(state["session"].metadata.get("collected_fields") or {}),
         )
         return {"agent_reply": reply}
 
@@ -591,6 +621,7 @@ class AIOrchestrator:
             reply_text = f"{greeting}\n\n{reply_text}"
         session.history.append({"role": "user", "content": state["message"]})
         session.history.append({"role": "assistant", "content": reply_text})
+        self._remember_fields(session, agent_reply.collected_fields)
         session.metadata.update({
             "orchestrator": "langgraph",
             "last_node": "persist_turn",
@@ -944,6 +975,7 @@ class AIOrchestrator:
                 if model_decision.model_tier == "complex"
                 else self.simple_llm
             ),
+            collected_fields=dict(session.metadata.get("collected_fields") or {}),
         )
 
         reply_text = agent_reply.text
@@ -952,6 +984,7 @@ class AIOrchestrator:
 
         session.history.append({"role": "user", "content": message})
         session.history.append({"role": "assistant", "content": reply_text})
+        self._remember_fields(session, agent_reply.collected_fields)
         self._persist(session)
 
         return TurnResult(

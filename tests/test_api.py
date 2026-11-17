@@ -74,7 +74,11 @@ def test_health_and_chat_flow(monkeypatch, tmp_path):
     assert data["session_id"]
     assert data["reply"]
 
-    reset = client.post("/api/reset", json={"session_id": data["session_id"]})
+    reset = client.post(
+        "/api/reset",
+        json={"session_id": data["session_id"]},
+        headers={"X-Session-Token": data["session_token"]},
+    )
     assert reset.status_code == 200
     assert reset.json()["active_agent"] is None
 

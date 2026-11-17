@@ -2,8 +2,11 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
+from datetime import datetime, timedelta
 from typing import Any, Callable
+from zoneinfo import ZoneInfo
 
+from autosfera.config import get_settings
 from autosfera.logging import get_logger
 from autosfera.rag import RAGRetriever, RetrievedChunk
 
@@ -155,13 +158,13 @@ def _extract_phone(text: str) -> str | None:
 
 def _extract_customer_name(text: str) -> str | None:
     patterns = (
-        r"(?:меня\s+зовут|имя|фио)\s*[:—-]?\s*([А-ЯЁ][а-яё]+(?:\s+[А-ЯЁ][а-яё]+){0,2})",
-        r"(?:я\s+|клиент\s*[:—-]?\s*)([А-ЯЁ][а-яё]+)(?=\s*[,.;]|\s+телефон)",
+        r"(?i:меня[ \t]+зовут|имя|фио)\s*[:—-]?\s*([А-ЯЁ][а-яё]+(?:[ \t]+[А-ЯЁ][а-яё]+){0,2})",
+        r"(?:я[ \t]+|клиент\s*[:—-]?\s*)([А-ЯЁ][а-яё]+)(?=[ \t]*[,.;]|[ \t]+телефон)",
     )
     for pattern in patterns:
-        match = re.search(pattern, text, flags=re.IGNORECASE)
+        match = re.search(pattern, text)
         if match:
-            return re.sub(r"\s+", " ", match.group(1)).strip()
+            return re.sub(r"[ \t]+", " ", match.group(1)).strip()
     return None
 
 
@@ -192,6 +195,162 @@ def _lead_requested(text: str) -> bool:
 def _extract_vehicle(text: str) -> str | None:
     match = re.search(r"\b(Nova\s+(?:Comfort|Drive|Cargo|Classic))\b", text, flags=re.IGNORECASE)
     return match.group(1).title() if match else None
+
+
+_MONTHS = {
+    "января": 1, "февраля": 2, "марта": 3, "апреля": 4, "мая": 5, "июня": 6,
+    "июля": 7, "августа": 8, "сентября": 9, "октября": 10, "ноября": 11, "декабря": 12,
+}
+_VAGUE_TIME = ("утром", "днем", "днём", "вечером", "ночью", "после обеда", "к обеду")
+
+
+def _dealer_now(now: datetime | None, timezone_name: str) -> datetime:
+    zone = ZoneInfo(timezone_name)
+    current = now or datetime.now(zone)
+    if current.tzinfo is None:
+        current = current.replace(tzinfo=zone)
+    return current.astimezone(zone)
+
+
+def _clock_in(text: str) -> tuple[int, int] | None:
+    lowered = text.lower().replace("ё", "е")
+    clocks = re.findall(r"(?<!\d)(\d{1,2}):(\d{2})(?!\d)", lowered)
+    if len(clocks) > 1:
+        return None
+    if len(clocks) == 1:
+        hour, minute = int(clocks[0][0]), int(clocks[0][1])
+    else:
+        hours = re.findall(r"(?:^|\s)в\s+(\d{1,2})(?!\d)", lowered)
+        if len(hours) != 1:
+            return None
+        hour, minute = int(hours[0]), 0
+    if hour > 23 or minute > 59:
+        return None
+    return hour, minute
+
+
+def _date_in(text: str, today: datetime) -> datetime | None:
+    lowered = text.lower().replace("ё", "е")
+    if "послезавтра" in lowered:
+        return today + timedelta(days=2)
+    if "завтра" in lowered:
+        return today + timedelta(days=1)
+    if "сегодня" in lowered:
+        return today
+    iso = re.search(r"\b(\d{4})-(\d{2})-(\d{2})\b", lowered)
+    dotted = re.search(r"\b(\d{1,2})[.](\d{1,2})[.](\d{4})\b", lowered)
+    named = re.search(
+        r"\b(\d{1,2})\s+(января|февраля|марта|апреля|мая|июня|июля|августа|сентября|октября|ноября|декабря)(?:\s+(\d{4}))?",
+        lowered,
+    )
+    try:
+        if iso:
+            return today.replace(year=int(iso.group(1)), month=int(iso.group(2)), day=int(iso.group(3)))
+        if dotted:
+            return today.replace(year=int(dotted.group(3)), month=int(dotted.group(2)), day=int(dotted.group(1)))
+        if named:
+            year = int(named.group(3) or today.year)
+            found = today.replace(year=year, month=_MONTHS[named.group(2)], day=int(named.group(1)))
+            if named.group(3) is None and found.date() < today.date():
+                return None
+            return found
+    except ValueError:
+        return None
+    return None
+
+
+def resolve_preferred_at(
+    message: str,
+    previous: str | None = None,
+    *,
+    now: datetime | None = None,
+    timezone_name: str | None = None,
+) -> tuple[str | None, str | None]:
+    """Resolve a dealer-local date and time to an absolute timestamp.
+
+    A relative word is converted once, at the moment the client says it.
+    Later turns reuse the stored timestamp instead of recomputing «завтра».
+    """
+    zone_name = timezone_name or get_settings().dealer_timezone
+    current = _dealer_now(now, zone_name)
+    lowered = message.lower().replace("ё", "е")
+    vague = any(word in lowered for word in _VAGUE_TIME)
+    several_clocks = len(re.findall(r"(?<!\d)\d{1,2}:\d{2}(?!\d)", lowered)) > 1
+    if vague or several_clocks:
+        return None, "Уточните точные дату и время, например 18.11.2026 в 15:00."
+    clock = _clock_in(message)
+    day = _date_in(message, current)
+    previous_day = previous_clock = None
+    if previous:
+        parsed = _parse_absolute_preferred(previous, current.tzinfo)
+        if parsed is not None:
+            local = parsed.astimezone(current.tzinfo)
+            previous_day = local
+            previous_clock = (local.hour, local.minute)
+    if day is not None and clock is not None:
+        return _format_preferred(day, clock), None
+    if day is not None and previous_clock is not None:
+        return _format_preferred(day, previous_clock), None
+    if clock is not None and previous_day is not None:
+        return _format_preferred(previous_day, clock), None
+    if day is not None:
+        return None, "Укажите время визита."
+    if clock is not None:
+        return None, "Укажите дату визита. Время без даты не сохраняется."
+    if previous:
+        return previous, None
+    return None, None
+
+
+def _parse_absolute_preferred(value: str, tzinfo: Any) -> datetime | None:
+    try:
+        parsed = datetime.fromisoformat(value)
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=tzinfo)
+    return parsed
+
+
+def _format_preferred(day: datetime, clock: tuple[int, int]) -> str:
+    local = day.replace(hour=clock[0], minute=clock[1], second=0, microsecond=0)
+    return local.isoformat(timespec="minutes")
+
+
+def _extract_issue(text: str) -> str | None:
+    lowered = text.lower().replace("ё", "е")
+    if any(marker in lowered for marker in ("проблем", "неисправ", "стук", "шум", "теч", "не заводит", "вибрац")):
+        return re.sub(r"\s+", " ", text).strip()[:200]
+    return None
+
+
+def _missing_booking_labels(kind: str, fields: dict[str, Any]) -> list[str]:
+    required = [
+        ("customer_name", "ФИО"),
+        ("phone", "телефон"),
+        ("preferred_at", "дату и время"),
+    ]
+    if kind == "test_drive_booking":
+        required.insert(2, ("vehicle", "модель"))
+    missing = [label for key, label in required if not fields.get(key)]
+    if kind == "service_booking" and not fields.get("vehicle") and not fields.get("issue"):
+        missing.append("автомобиль или описание неисправности")
+    return missing
+
+
+def _booking_fields(message: str, ctx: dict[str, Any], kind: str) -> tuple[dict[str, Any], str | None]:
+    combined = _user_constraint_text(message, ctx)
+    prior = dict(ctx.get("collected_fields") or {})
+    preferred, clarification = resolve_preferred_at(message, prior.get("preferred_at"))
+    fields = {
+        "customer_name": _extract_customer_name(combined) or prior.get("customer_name"),
+        "phone": _extract_phone(combined) or prior.get("phone"),
+        "vehicle": _extract_vehicle(combined) or prior.get("vehicle"),
+        "issue": _extract_issue(message) or prior.get("issue"),
+        "preferred_at": preferred,
+        "booking_skill": kind,
+    }
+    return {key: value for key, value in fields.items() if value}, clarification
 
 
 def _extract_order_id(text: str) -> str | None:
@@ -671,37 +830,37 @@ def credit_leasing(message: str, chunks: list[RetrievedChunk], ctx: dict[str, An
 
 
 def test_drive_booking(message: str, chunks: list[RetrievedChunk], ctx: dict[str, Any]) -> SkillResult:
-    text, ids, missing_context = _context_or_missing(chunks, "test_drive_booking")
-    combined = _user_constraint_text(message, ctx)
-    phone = _extract_phone(combined)
-    vehicle = _extract_vehicle(combined)
-    fields = {key: value for key, value in {"phone": phone, "vehicle": vehicle}.items() if value}
-    # A booking request is an action flow, not a factual question. Missing RAG
-    # context must not produce the contradictory "нет данных" fallback while
-    # the assistant is collecting fields for the request.
+    text, ids, missing_context = _context_or_missing(
+        chunks, "test_drive_booking", limit=1, prefer_ids=("sales-test-drive",)
+    )
+    fields, clarification = _booking_fields(message, ctx, "test_drive_booking")
     context_prefix = "" if missing_context else f"{text}\n\n"
-    if phone and vehicle:
+    missing = _missing_booking_labels("test_drive_booking", fields)
+    if clarification:
+        missing = [clarification, *[label for label in missing if label != "дату и время"]]
+    if missing:
         reply = (
             context_prefix
-            + f"Заявка на тест-драйв принята предварительно (телефон: {phone}). "
-            "Подтверждение выполнит менеджер."
+            + "Заявка на тест-драйв ещё не сохранена. "
+            + "Нужно указать: "
+            + ", ".join(missing)
+            + ". Запись подтвердит менеджер после сохранения заявки."
         )
-        return SkillResult(
-            "test_drive_booking",
-            reply,
-            escalated=True,
-            escalation_target="sales_manager",
-            escalation_reason="подтверждение тест-драйва",
-            collected_fields=fields,
-            rag_ids=ids,
-        )
+        return SkillResult("test_drive_booking", reply, collected_fields=fields, rag_ids=ids)
     reply = (
         context_prefix
-        + "Готов подготовить предварительную заявку на тест-драйв. "
-        "Укажите ФИО, телефон, модель автомобиля и желаемые дату/время. "
-        "Окончательно запись подтвердит менеджер."
+        + "Данные для тест-драйва собраны. Заявку можно сохранить, "
+        "но запись не подтверждена, пока её не проверит менеджер."
     )
-    return SkillResult("test_drive_booking", reply, collected_fields=fields, rag_ids=ids)
+    return SkillResult(
+        "test_drive_booking",
+        reply,
+        escalated=True,
+        escalation_target="sales_manager",
+        escalation_reason="подтверждение тест-драйва",
+        collected_fields=fields,
+        rag_ids=ids,
+    )
 
 
 # --- Support skills ---
@@ -829,33 +988,37 @@ def warranty_consultation(message: str, chunks: list[RetrievedChunk], ctx: dict[
 
 
 def service_booking(message: str, chunks: list[RetrievedChunk], ctx: dict[str, Any]) -> SkillResult:
-    text, ids, _ = _context_or_missing(chunks, "service_booking", limit=1)
-    combined = _user_constraint_text(message, ctx)
-    phone = _extract_phone(combined)
-    vehicle = _extract_vehicle(combined)
-    fields = {key: value for key, value in {"phone": phone, "vehicle": vehicle}.items() if value}
-    if phone:
-        car = f", автомобиль {vehicle}" if vehicle else ""
-        reply = (
-            f"{text}\n\n"
-            f"Предварительная заявка на сервис принята (телефон: {phone}{car}). "
-            "Слот подтвердит сотрудник сервиса."
-        )
-        return SkillResult(
-            "service_booking",
-            reply,
-            escalated=True,
-            escalation_target="service_advisor",
-            escalation_reason="подтверждение записи в сервис",
-            collected_fields=fields,
-            rag_ids=ids,
-        )
-    missing_bits = [label for label, value in (("модель", vehicle), ("телефон", phone)) if not value]
-    reply = (
-        f"{text}\n\n"
-        f"Для записи укажите {', '.join(missing_bits) if missing_bits else 'дату и описание проблемы'}."
+    text, ids, missing_context = _context_or_missing(
+        chunks, "service_booking", limit=1, prefer_ids=("service-booking",)
     )
-    return SkillResult("service_booking", reply, collected_fields=fields, rag_ids=ids)
+    fields, clarification = _booking_fields(message, ctx, "service_booking")
+    context_prefix = "" if missing_context else f"{text}\n\n"
+    missing = _missing_booking_labels("service_booking", fields)
+    if clarification:
+        missing = [clarification, *[label for label in missing if label != "дату и время"]]
+    if missing:
+        reply = (
+            context_prefix
+            + "Заявка в сервис ещё не сохранена. "
+            + "Нужно указать: "
+            + ", ".join(missing)
+            + ". Слот подтвердит сотрудник сервиса после сохранения заявки."
+        )
+        return SkillResult("service_booking", reply, collected_fields=fields, rag_ids=ids)
+    reply = (
+        context_prefix
+        + "Данные для сервиса собраны. Заявку можно сохранить, "
+        "но запись не подтверждена, пока её не проверит сотрудник сервиса."
+    )
+    return SkillResult(
+        "service_booking",
+        reply,
+        escalated=True,
+        escalation_target="service_advisor",
+        escalation_reason="подтверждение записи в сервис",
+        collected_fields=fields,
+        rag_ids=ids,
+    )
 
 
 def maintenance_consultation(message: str, chunks: list[RetrievedChunk], ctx: dict[str, Any]) -> SkillResult:
@@ -1100,7 +1263,19 @@ class SkillRouter:
         return [s for s in self.registry.values() if s.agent == agent_key]
 
     def select(self, agent_key: str, message: str, ctx: dict[str, Any] | None = None) -> Skill:
+        from autosfera.model_router import booking_agent
+
+        forced = booking_agent(message)
+        if forced == "SALES_AGENT" and agent_key == "SALES_AGENT" and "test_drive_booking" in self.registry:
+            return self.registry["test_drive_booking"]
+        if forced == "SERVICE_AGENT" and agent_key == "SERVICE_AGENT" and "service_booking" in self.registry:
+            return self.registry["service_booking"]
         candidates = self.skills_for_agent(agent_key)
+        collected = (ctx or {}).get("collected_fields") or {}
+        booking_skill = collected.get("booking_skill")
+        if booking_skill in self.registry and self.registry[booking_skill].agent == agent_key:
+            if candidates and max(skill.match_score(message) for skill in candidates) == 0:
+                return self.registry[booking_skill]
         current_ranked = sorted(
             candidates, key=lambda s: s.match_score(message), reverse=True
         )
