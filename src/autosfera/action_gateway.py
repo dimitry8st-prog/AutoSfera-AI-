@@ -112,21 +112,15 @@ def _execute_demo_crm(store: Any, job: dict[str, Any]) -> dict[str, Any] | None:
     linked_request_id = payload.get("request_id")
     try:
         if linked_request_id and store.get_request(job["dealer_id"], linked_request_id) is not None:
-            confirmed = _snapshot_matches(store, job)
             result = {
                 "provider": "demo_crm",
                 "request_id": linked_request_id,
-                "confirmed": confirmed,
                 "request_version": payload.get("request_version"),
             }
-            if not confirmed:
-                result["reason"] = "version_mismatch"
             completed = store.finish_action_job(
                 job["dealer_id"], job["id"], "completed", "demo-crm", result=result
             )[0]
-            current = confirm_saved_request(store, job) if confirmed else store.get_request(
-                job["dealer_id"], linked_request_id
-            )
+            current = confirm_saved_request(store, job) if completed and completed.get("status") == "completed" else None
             logger.info(
                 "action_completed dealer_id=%s action_id=%s trace_id=%s provider=demo_crm request_id=%s status=%s",
                 job["dealer_id"], job["id"], job["trace_id"], linked_request_id,
@@ -158,36 +152,22 @@ def _execute_demo_crm(store: Any, job: dict[str, Any]) -> dict[str, Any] | None:
         return _fail(store, job, f"execution_failed: {type(exc).__name__}")
 
 
-def _snapshot_matches(store: Any, job: dict[str, Any]) -> bool:
-    payload = job.get("payload") or {}
-    request_id = payload.get("request_id")
-    if not request_id:
-        return False
-    current = store.get_request(job["dealer_id"], request_id)
-    if current is None or current.get("status") != "saved":
-        return False
-    approved_version = payload.get("request_version")
-    if approved_version is None or int(approved_version) != int(current.get("details_version") or 1):
-        return False
-    return current.get("preferred_at") == payload.get("preferred_at")
-
-
 def confirm_saved_request(store: Any, job: dict[str, Any]) -> dict[str, Any] | None:
     """Move a saved intake to confirmed only when the approved snapshot is unchanged."""
     payload = job.get("payload") or {}
     request_id = payload.get("request_id")
     if not request_id:
         return None
-    current = store.get_request(job["dealer_id"], request_id)
-    if current is None:
-        return None
-    if not _snapshot_matches(store, job):
+    version = payload.get("request_version")
+    updated = store.confirm_request_version(
+        job["dealer_id"], request_id, int(version), payload.get("preferred_at"),
+    ) if version is not None else None
+    if updated is None:
         logger.info(
             "request_confirm_skipped dealer_id=%s request_id=%s action_id=%s reason=version_mismatch",
             job["dealer_id"], request_id, job.get("id"),
         )
-        return current
-    updated = store.update_request(job["dealer_id"], request_id, status="confirmed")
+        return store.get_request(job["dealer_id"], request_id)
     logger.info(
         "request_status dealer_id=%s request_id=%s to=confirmed",
         job["dealer_id"], request_id,

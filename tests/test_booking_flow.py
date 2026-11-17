@@ -212,3 +212,72 @@ def test_client_session_requires_its_secret_and_internal_session_requires_staff(
         headers={"Authorization": f"Bearer {outsider}"},
     )
     assert missing.status_code == 404
+
+
+def test_employee_continuation_cannot_put_internal_answers_in_a_client_session(monkeypatch, tmp_path) -> None:
+    client, store = _client(monkeypatch, tmp_path)
+    guest = _say(client, "Хочу купить автомобиль")
+    original = store.load_session("main-salon", guest["session_id"])["history"]
+    employee = create_token("employee", "employee", "main-salon")
+    internal = client.post(
+        "/api/chat",
+        json={"message": "Найди внутренний регламент обработки лида", "session_id": guest["session_id"]},
+        headers={"Authorization": f"Bearer {employee}", "X-Session-Token": guest["session_token"]},
+    )
+    assert internal.status_code == 200
+    body = internal.json()
+    assert body["agent"] == "EMPLOYEE_AGENT"
+    assert body["session_id"] != guest["session_id"]
+    assert body["session_token"] is None
+    restored = client.get(
+        f"/api/session/{guest['session_id']}",
+        headers={"X-Session-Token": guest["session_token"]},
+    )
+    assert restored.status_code == 200
+    assert restored.json()["history"] == original
+    assert restored.json()["visibility"] == "client"
+    denied = client.get(
+        f"/api/session/{body['session_id']}",
+        headers={"X-Session-Token": guest["session_token"]},
+    )
+    assert denied.status_code == 401
+    assert client.get(
+        f"/api/session/{body['session_id']}", headers={"Authorization": f"Bearer {employee}"},
+    ).status_code == 200
+
+
+def test_channel_adapter_cannot_append_to_a_client_session(monkeypatch, tmp_path) -> None:
+    client, store = _client(monkeypatch, tmp_path)
+    guest = _say(client, "Хочу купить автомобиль")
+    original = store.load_session("main-salon", guest["session_id"])["history"]
+    employee = create_token("employee", "employee", "main-salon")
+    response = client.post(
+        "/api/channels/telegram",
+        json={"text": "Найди внутренний регламент", "chat_id": guest["session_id"]},
+        headers={"Authorization": f"Bearer {employee}", "X-Session-Token": guest["session_token"]},
+    )
+    assert response.status_code == 401
+    assert store.load_session("main-salon", guest["session_id"])["history"] == original
+
+
+def test_unknown_chat_session_id_is_not_adopted(monkeypatch, tmp_path) -> None:
+    client, _store = _client(monkeypatch, tmp_path)
+    chosen_id = str(uuid4())
+    response = client.post("/api/chat", json={"message": "Здравствуйте", "session_id": chosen_id})
+    assert response.status_code == 200
+    assert response.json()["session_id"] != chosen_id
+
+
+def test_saving_manager_assignment_preserves_booking_status(monkeypatch, tmp_path) -> None:
+    client, store = _client(monkeypatch, tmp_path)
+    employee = create_token("sales", "sales", "main-salon")
+    for status in ("saved", "confirmed"):
+        request = store.create_request("main-salon", "test_drive", status=status)
+        response = client.patch(
+            f"/api/requests/{request['id']}",
+            json={"assigned_to": "Менеджер", "status": status},
+            headers={"Authorization": f"Bearer {employee}"},
+        )
+        assert response.status_code == 200
+        assert response.json()["status"] == status
+        assert response.json()["assigned_to"] == "Менеджер"

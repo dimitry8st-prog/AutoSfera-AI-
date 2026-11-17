@@ -362,17 +362,23 @@ def create_app() -> FastAPI:
         if channel is None:
             raise HTTPException(status_code=400, detail=f"Unknown channel: {body.channel}")
         store = get_store()
+        session_id = None
         if body.session_id:
             existing_session = store.load_session(actor.dealer_id, body.session_id)
             if existing_session is not None:
                 _authorize_session(existing_session, actor, x_session_token)
+                # A client secret must never grant access to a staff answer.
+                # Keep the original client conversation intact and start a
+                # separate internal session when an employee changes context.
+                if actor.role == "guest" or existing_session.get("visibility") == "internal":
+                    session_id = body.session_id
         try:
             allowed_agents = set(AGENT_META)
             if actor.role not in {"employee", "admin"}:
                 allowed_agents.discard("EMPLOYEE_AGENT")
             result = orch.handle_message(
                 body.message,
-                session_id=body.session_id,
+                session_id=session_id,
                 channel=body.channel,
                 allowed_agents=allowed_agents,
             )
@@ -854,6 +860,15 @@ def create_app() -> FastAPI:
         channel = channels.get(channel_name)
         if channel is None:
             raise HTTPException(status_code=404, detail="channel not found")
+        identity_keys = {
+            "web": "session_id", "telegram": "chat_id", "whatsapp": "from",
+            "email": "message_id", "crm": "ticket_id",
+        }
+        external_session = payload.get(identity_keys[channel_name]) or payload.get("session_id")
+        if external_session:
+            existing = get_store().load_session(_actor.dealer_id, str(external_session))
+            if existing is not None:
+                _authorize_session(existing, _actor, None)
         result = channel.receive(payload)
         _issue_session_access(get_store(), _actor, result.session_id)
         return ChatResponse(

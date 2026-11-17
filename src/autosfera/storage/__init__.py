@@ -256,28 +256,38 @@ class PlatformStore:
         return dict(row) if row else None
 
     def update_request_details(self, dealer_id: str, request_id: str, **data: Any) -> dict[str, Any] | None:
-        current = self.get_request(dealer_id, request_id)
-        if current is None or current.get("status") != "saved":
-            return current
         keys = ("customer_name", "phone", "vehicle", "preferred_at", "comment", "session_id")
-        changed = any(data.get(key) != current.get(key) for key in keys if key in data)
-        version = int(current.get("details_version") or 1) + (1 if changed else 0)
+        fields = [key for key in keys if key in data]
+        if not fields:
+            return self.get_request(dealer_id, request_id)
+        # Compare and increment against the row being updated, not an earlier
+        # read: two concurrent edits must never reuse one approval version.
+        different = " OR ".join(f"{key} IS NOT ?" for key in fields)
+        assignments = ", ".join(f"{key} = ?" for key in fields)
+        values = [data[key] for key in fields]
         with self.connect() as db:
             db.execute(
-                """UPDATE requests SET customer_name = ?, phone = ?, vehicle = ?,
-                preferred_at = ?, comment = ?, session_id = ?, details_version = ?, updated_at = ?
+                f"""UPDATE requests SET
+                details_version = details_version + CASE WHEN {different} THEN 1 ELSE 0 END,
+                {assignments}, updated_at = ?
                 WHERE id = ? AND dealer_id = ? AND status = 'saved'""",
-                (
-                    data.get("customer_name", current.get("customer_name")),
-                    data.get("phone", current.get("phone")),
-                    data.get("vehicle", current.get("vehicle")),
-                    data.get("preferred_at", current.get("preferred_at")),
-                    data.get("comment", current.get("comment")),
-                    data.get("session_id", current.get("session_id")),
-                    version, self._now(), request_id, dealer_id,
-                ),
+                (*values, *values, self._now(), request_id, dealer_id),
             )
         return self.get_request(dealer_id, request_id)
+
+    def confirm_request_version(
+        self, dealer_id: str, request_id: str, version: int, preferred_at: str | None,
+    ) -> dict[str, Any] | None:
+        """Confirm exactly the approved snapshot in one conditional write."""
+        with self.connect() as db:
+            row = db.execute(
+                """UPDATE requests SET status = 'confirmed', updated_at = ?
+                WHERE id = ? AND dealer_id = ? AND status = 'saved'
+                  AND details_version = ? AND preferred_at IS ?
+                RETURNING *""",
+                (self._now(), request_id, dealer_id, version, preferred_at),
+            ).fetchone()
+        return dict(row) if row else None
 
     def find_request_by_source_ref(self, dealer_id: str, source_ref: str) -> dict[str, Any] | None:
         with self.connect() as db:

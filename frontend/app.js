@@ -5,31 +5,120 @@ let sessionId = localStorage.getItem("autosfera_session") || null;
 let sessionToken = localStorage.getItem("autosfera_session_token") || "";
 let token = sessionStorage.getItem("autosfera_token") || "";
 let role = sessionStorage.getItem("autosfera_role") || "guest";
+let conversationEpoch = 0;
 const escapeHTML = (value) => String(value ?? "").replace(/[&<>'"]/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;" })[char]);
 
 function headers(json = false) { const value = json ? { "Content-Type": "application/json" } : {}; if (token) value.Authorization = `Bearer ${token}`; if (sessionToken) value["X-Session-Token"] = sessionToken; return value; }
 async function api(path, options = {}) { const response = await fetch(path, { ...options, headers: { ...headers(Boolean(options.body)), ...(options.headers || {}) } }); if (!response.ok) { const error = await response.json().catch(() => ({ detail: response.statusText })); throw new Error(error.detail || "Ошибка запроса"); } return response.json(); }
 function addMessage(kind, text, meta = "") { const node = document.createElement("div"); node.className = `msg ${kind}`; if (meta) { const label = document.createElement("span"); label.className = "meta"; label.textContent = meta; node.append(label); } node.append(document.createTextNode(text)); messagesEl.append(node); messagesEl.scrollTop = messagesEl.scrollHeight; }
 function setTyping(on) { $("#typing")?.remove(); if (!on) return; const node = document.createElement("div"); node.id = "typing"; node.className = "msg bot typing"; node.innerHTML = "<span></span><span></span><span></span>"; messagesEl.append(node); }
-async function sendMessage(text) { addMessage("user", text); setTyping(true); $("#feedbackPanel").classList.add("hidden"); $("#feedbackStatus").textContent = ""; $$("#feedbackPanel button").forEach((item) => { item.disabled = false; }); try { const data = await api("/api/chat", { method: "POST", body: JSON.stringify({ message: text, session_id: sessionId, channel: "web" }) }); sessionId = data.session_id; localStorage.setItem("autosfera_session", sessionId); if (data.session_token) { sessionToken = data.session_token; localStorage.setItem("autosfera_session_token", sessionToken); } $("#agentBadge").textContent = data.agent_label; setTyping(false); const stateLabel = { collecting: "собираем данные", saved: "заявка сохранена", confirmed: "запись подтверждена", cancelled: "заявка отклонена" }[data.intake_state]; addMessage("bot", data.reply, [data.agent_label, data.skill, stateLabel, data.escalated ? "эскалация" : "", data.rag_ids?.length ? `источники: ${data.rag_ids.join(", ")}` : ""].filter(Boolean).join(" · ")); $("#feedbackPanel").classList.remove("hidden"); if (data.action_status === "waiting_approval" && data.intake_state !== "saved") addMessage("bot", `Запрос действия №${data.action_id.slice(0, 8)} передан менеджеру. До подтверждения заявка не создаётся.`, "Action Gateway · ожидает подтверждения"); } catch (error) { setTyping(false); addMessage("bot", error.message); } }
+function clearConversation() {
+  conversationEpoch += 1;
+  sessionId = null;
+  sessionToken = "";
+  localStorage.removeItem("autosfera_session");
+  localStorage.removeItem("autosfera_session_token");
+  messagesEl.replaceChildren();
+  ["#requestsBody", "#actionJobs", "#researchJobs", "#metrics", "#kbContent"].forEach((selector) => $(selector).replaceChildren());
+  $("#kbPanel").classList.add("hidden");
+  $("#feedbackPanel").classList.add("hidden");
+  $("#feedbackStatus").textContent = "";
+  $("#agentBadge").textContent = "Ожидание маршрутизации";
+  addMessage("bot", "Новый диалог. Опишите задачу — оркестратор подключит нужного ассистента.");
+}
+
+function requestStatusOptions(status) {
+  const statuses = ["saved", "new", "qualified", "scheduled", "assigned", "done", "cancelled", "confirmed"];
+  if (!statuses.includes(status)) statuses.unshift(status);
+  return statuses.map((value) => `<option value="${escapeHTML(value)}"${value === status ? " selected" : ""}${value === "confirmed" && value !== status ? " disabled" : ""}>${escapeHTML(value)}</option>`).join("");
+}
+
+async function sendMessage(text) {
+  const epoch = conversationEpoch;
+  addMessage("user", text);
+  setTyping(true);
+  $("#feedbackPanel").classList.add("hidden");
+  $("#feedbackStatus").textContent = "";
+  $$("#feedbackPanel button").forEach((item) => { item.disabled = false; });
+  try {
+    const data = await api("/api/chat", { method: "POST", body: JSON.stringify({ message: text, session_id: sessionId, channel: "web" }) });
+    if (epoch !== conversationEpoch) return;
+    if (sessionId !== data.session_id) {
+      sessionToken = "";
+      localStorage.removeItem("autosfera_session_token");
+    }
+    sessionId = data.session_id;
+    localStorage.setItem("autosfera_session", sessionId);
+    if (data.session_token) {
+      sessionToken = data.session_token;
+      localStorage.setItem("autosfera_session_token", sessionToken);
+    }
+    $("#agentBadge").textContent = data.agent_label;
+    setTyping(false);
+    const stateLabel = { collecting: "собираем данные", saved: "заявка сохранена", confirmed: "запись подтверждена", cancelled: "заявка отклонена" }[data.intake_state];
+    addMessage("bot", data.reply, [data.agent_label, data.skill, stateLabel, data.escalated ? "эскалация" : "", data.rag_ids?.length ? `источники: ${data.rag_ids.join(", ")}` : ""].filter(Boolean).join(" · "));
+    $("#feedbackPanel").classList.remove("hidden");
+    if (data.action_status === "waiting_approval" && data.intake_state !== "saved") addMessage("bot", `Запрос действия №${data.action_id.slice(0, 8)} передан менеджеру. До подтверждения заявка не создаётся.`, "Action Gateway · ожидает подтверждения");
+  } catch (error) {
+    if (epoch !== conversationEpoch) return;
+    setTyping(false);
+    addMessage("bot", error.message);
+  }
+}
 function applyRole() { const staff = ["admin", "sales", "service", "employee"].includes(role); const employee = ["admin", "employee"].includes(role); $$(".staff-only").forEach((node) => node.classList.toggle("hidden", !staff)); $$(".employee-only").forEach((node) => node.classList.toggle("hidden", !employee)); $("#loginBtn").classList.toggle("hidden", staff); $("#logoutBtn").classList.toggle("hidden", !staff); $("#agentBadge").title = `Роль: ${role}`; }
 function showView(id) { $$(".app-view").forEach((node) => node.classList.toggle("hidden", node.id !== id)); $$("[data-view]").forEach((node) => node.classList.toggle("active", node.dataset.view === id)); if (id === "managerView") loadManager(); if (id === "researchView") loadResearch(); }
-async function loadManager() { try { const [requests, analytics, actions] = await Promise.all([api("/api/requests"), api("/api/analytics/summary"), api("/api/actions")]); $("#metrics").innerHTML = [["Диалоги", analytics.conversations], ["Заявки", analytics.requests], ["CSAT", analytics.csat == null ? "—" : `${analytics.csat}/5`], ["На согласовании", actions.items.filter((item) => item.status === "waiting_approval").length], ["Эскалации", analytics.escalations]].map(([label, value]) => `<article><strong>${escapeHTML(value)}</strong><span>${escapeHTML(label)}</span></article>`).join(""); $("#actionJobs").replaceChildren(...actions.items.map((item) => { const card = document.createElement("article"); card.className = "job-card"; const allowed = role === "admin" || (role === "sales" && ["lead", "test_drive"].includes(item.kind)) || (role === "service" && item.kind === "service"); const controls = item.status === "waiting_approval" && allowed ? `<div><button data-action-review="approve" data-action="${escapeHTML(item.id)}">Подтвердить</button><button class="ghost" data-action-review="reject" data-action="${escapeHTML(item.id)}">Отклонить</button></div>` : item.status === "failed" && allowed ? `<button data-action-retry="${escapeHTML(item.id)}">Повторить</button>` : ""; card.innerHTML = `<div><strong>${escapeHTML(item.kind)} · ${escapeHTML(item.payload?.vehicle || "без автомобиля")}</strong><span>${escapeHTML(item.status)} · ${escapeHTML(item.payload?.phone || "")}</span></div><p>${escapeHTML(item.error || item.review_note || (item.recent_events || []).map((event) => event.event_type).join(" → ") || `trace ${item.trace_id.slice(0, 8)}`)}</p>${controls}`; return card; })); $("#requestsBody").replaceChildren(...requests.items.map((item) => { const row = document.createElement("tr"); row.innerHTML = `<td>${escapeHTML(item.kind)}</td><td>${escapeHTML(item.customer_name || "—")}<small>${escapeHTML(item.phone || "")}</small></td><td>${escapeHTML(item.vehicle || "—")}</td><td><select data-status="${escapeHTML(item.id)}">${["new","qualified","scheduled","assigned","done","cancelled"].map((s) => `<option ${s === item.status ? "selected" : ""}>${s}</option>`).join("")}</select></td><td><input data-assignee="${escapeHTML(item.id)}" value="${escapeHTML(item.assigned_to || "")}" placeholder="Менеджер" /></td><td><button data-save="${escapeHTML(item.id)}">Сохранить</button></td>`; return row; })); } catch (error) { $("#requestsBody").innerHTML = `<tr><td colspan="6">${escapeHTML(error.message)}</td></tr>`; $("#actionJobs").textContent = error.message; } }
-async function loadResearch() { try { const data = await api("/api/research/jobs"); $("#researchJobs").replaceChildren(...data.items.map((job) => { const card = document.createElement("article"); card.className = "job-card"; card.innerHTML = `<div><strong>${escapeHTML(job.query)}</strong><span>${escapeHTML(job.status)} · trace ${escapeHTML(job.trace_id.slice(0, 8))}</span></div><p>${escapeHTML(job.result?.summary || job.result?.content || job.error || "Ожидает обработки")}</p>${job.status === "review" ? `<div><button data-review="approve" data-job="${escapeHTML(job.id)}">Approve</button><button class="ghost" data-review="reject" data-job="${escapeHTML(job.id)}">Reject</button></div>` : ""}`; return card; })); } catch (error) { $("#researchJobs").textContent = error.message; } }
+async function loadManager() { const epoch = conversationEpoch; try { const [requests, analytics, actions] = await Promise.all([api("/api/requests"), api("/api/analytics/summary"), api("/api/actions")]); if (epoch !== conversationEpoch) return; $("#metrics").innerHTML = [["Диалоги", analytics.conversations], ["Заявки", analytics.requests], ["CSAT", analytics.csat == null ? "—" : `${analytics.csat}/5`], ["На согласовании", actions.items.filter((item) => item.status === "waiting_approval").length], ["Эскалации", analytics.escalations]].map(([label, value]) => `<article><strong>${escapeHTML(value)}</strong><span>${escapeHTML(label)}</span></article>`).join(""); $("#actionJobs").replaceChildren(...actions.items.map((item) => { const card = document.createElement("article"); card.className = "job-card"; const allowed = role === "admin" || (role === "sales" && ["lead", "test_drive"].includes(item.kind)) || (role === "service" && item.kind === "service"); const controls = item.status === "waiting_approval" && allowed ? `<div><button data-action-review="approve" data-action="${escapeHTML(item.id)}">Подтвердить</button><button class="ghost" data-action-review="reject" data-action="${escapeHTML(item.id)}">Отклонить</button></div>` : item.status === "failed" && allowed ? `<button data-action-retry="${escapeHTML(item.id)}">Повторить</button>` : ""; card.innerHTML = `<div><strong>${escapeHTML(item.kind)} · ${escapeHTML(item.payload?.vehicle || "без автомобиля")}</strong><span>${escapeHTML(item.status)} · ${escapeHTML(item.payload?.phone || "")}</span></div><p>${escapeHTML(item.error || item.review_note || (item.recent_events || []).map((event) => event.event_type).join(" → ") || `trace ${item.trace_id.slice(0, 8)}`)}</p>${controls}`; return card; })); $("#requestsBody").replaceChildren(...requests.items.map((item) => { const row = document.createElement("tr"); row.innerHTML = `<td>${escapeHTML(item.kind)}</td><td>${escapeHTML(item.customer_name || "—")}<small>${escapeHTML(item.phone || "")}</small></td><td>${escapeHTML(item.vehicle || "—")}</td><td><select data-status="${escapeHTML(item.id)}" data-current-status="${escapeHTML(item.status)}">${requestStatusOptions(item.status)}</select></td><td><input data-assignee="${escapeHTML(item.id)}" value="${escapeHTML(item.assigned_to || "")}" placeholder="Менеджер" /></td><td><button data-save="${escapeHTML(item.id)}">Сохранить</button></td>`; return row; })); } catch (error) { if (epoch !== conversationEpoch) return; $("#requestsBody").innerHTML = `<tr><td colspan="6">${escapeHTML(error.message)}</td></tr>`; $("#actionJobs").textContent = error.message; } }
+async function loadResearch() { const epoch = conversationEpoch; try { const data = await api("/api/research/jobs"); if (epoch !== conversationEpoch) return; $("#researchJobs").replaceChildren(...data.items.map((job) => { const card = document.createElement("article"); card.className = "job-card"; card.innerHTML = `<div><strong>${escapeHTML(job.query)}</strong><span>${escapeHTML(job.status)} · trace ${escapeHTML(job.trace_id.slice(0, 8))}</span></div><p>${escapeHTML(job.result?.summary || job.result?.content || job.error || "Ожидает обработки")}</p>${job.status === "review" ? `<div><button data-review="approve" data-job="${escapeHTML(job.id)}">Approve</button><button class="ghost" data-review="reject" data-job="${escapeHTML(job.id)}">Reject</button></div>` : ""}`; return card; })); } catch (error) { if (epoch !== conversationEpoch) return; $("#researchJobs").textContent = error.message; } }
 
 $("#chatForm").addEventListener("submit", (event) => { event.preventDefault(); const text = $("#messageInput").value.trim(); if (text) { $("#messageInput").value = ""; sendMessage(text); } });
 $("#quickReplies").addEventListener("click", (event) => { const button = event.target.closest("[data-q]"); if (button) sendMessage(button.dataset.q); });
 $("#feedbackPanel").addEventListener("click", async (event) => { const button = event.target.closest("[data-rating]"); if (!button || !sessionId) return; $$("#feedbackPanel button").forEach((item) => { item.disabled = true; }); try { const data = await api("/api/feedback", { method: "POST", body: JSON.stringify({ session_id: sessionId, rating: Number(button.dataset.rating) }) }); $("#feedbackStatus").textContent = data.created ? "Спасибо за оценку" : "Оценка уже сохранена"; } catch (error) { $("#feedbackStatus").textContent = error.message; $$("#feedbackPanel button").forEach((item) => { item.disabled = false; }); } });
-$("#resetBtn").addEventListener("click", async () => { if (sessionId) await api("/api/reset", { method: "POST", body: JSON.stringify({ session_id: sessionId }) }).catch(() => null); sessionId = null; sessionToken = ""; localStorage.removeItem("autosfera_session"); localStorage.removeItem("autosfera_session_token"); messagesEl.innerHTML = ""; $("#feedbackPanel").classList.add("hidden"); $$("#feedbackPanel button").forEach((item) => { item.disabled = false; }); $("#agentBadge").textContent = "Ожидание маршрутизации"; addMessage("bot", "Новый диалог. Опишите задачу — оркестратор подключит нужного ассистента."); });
-$("#kbBtn").addEventListener("click", async () => { const panel = $("#kbPanel"); panel.classList.toggle("hidden"); if (panel.classList.contains("hidden")) return; const data = await api("/api/knowledge"); $("#kbContent").innerHTML = Object.entries(data.sections).map(([section, docs]) => `<section class="kb-section"><h3>${escapeHTML(section)}</h3>${docs.map((doc) => `<div class="kb-doc"><strong>${escapeHTML(doc.title)}</strong>${escapeHTML(doc.content)}</div>`).join("")}</section>`).join(""); });
+$("#resetBtn").addEventListener("click", () => {
+  const previous = sessionId;
+  // Clear locally before the reset request resolves; stale replies are ignored.
+  const pending = previous ? api("/api/reset", { method: "POST", body: JSON.stringify({ session_id: previous }) }).catch(() => null) : null;
+  clearConversation();
+  return pending;
+});
+$("#kbBtn").addEventListener("click", async () => { const epoch = conversationEpoch; const panel = $("#kbPanel"); panel.classList.toggle("hidden"); if (panel.classList.contains("hidden")) return; const data = await api("/api/knowledge"); if (epoch !== conversationEpoch) return; $("#kbContent").innerHTML = Object.entries(data.sections).map(([section, docs]) => `<section class="kb-section"><h3>${escapeHTML(section)}</h3>${docs.map((doc) => `<div class="kb-doc"><strong>${escapeHTML(doc.title)}</strong>${escapeHTML(doc.content)}</div>`).join("")}</section>`).join(""); });
 $$('[data-view]').forEach((button) => button.addEventListener("click", () => showView(button.dataset.view)));
 $("#loginBtn").addEventListener("click", () => $("#loginDialog").showModal()); $("#cancelLogin").addEventListener("click", () => $("#loginDialog").close());
-$("#logoutBtn").addEventListener("click", () => { token = ""; role = "guest"; sessionStorage.clear(); applyRole(); showView("chatView"); });
-$("#loginForm").addEventListener("submit", async (event) => { event.preventDefault(); try { const data = await api("/api/auth/token", { method: "POST", body: JSON.stringify({ username: $("#username").value, password: $("#password").value }) }); token = data.access_token; role = data.role; sessionStorage.setItem("autosfera_token", token); sessionStorage.setItem("autosfera_role", role); $("#loginDialog").close(); applyRole(); } catch (error) { $("#loginError").textContent = error.message; } });
+$("#logoutBtn").addEventListener("click", () => { token = ""; role = "guest"; sessionStorage.removeItem("autosfera_token"); sessionStorage.removeItem("autosfera_role"); clearConversation(); applyRole(); showView("chatView"); });
+$("#loginForm").addEventListener("submit", async (event) => { event.preventDefault(); try { const data = await api("/api/auth/token", { method: "POST", body: JSON.stringify({ username: $("#username").value, password: $("#password").value }) }); token = data.access_token; role = data.role; sessionStorage.setItem("autosfera_token", token); sessionStorage.setItem("autosfera_role", role); $("#loginDialog").close(); clearConversation(); applyRole(); showView("chatView"); } catch (error) { $("#loginError").textContent = error.message; } });
 $("#refreshManager").addEventListener("click", loadManager);
-$("#requestsBody").addEventListener("click", async (event) => { const button = event.target.closest("[data-save]"); if (!button) return; const id = button.dataset.save; await api(`/api/requests/${id}`, { method: "PATCH", body: JSON.stringify({ status: $(`[data-status='${id}']`).value, assigned_to: $(`[data-assignee='${id}']`).value }) }); loadManager(); });
+$("#requestsBody").addEventListener("click", async (event) => {
+  const button = event.target.closest("[data-save]");
+  if (!button) return;
+  const id = button.dataset.save;
+  const select = $(`[data-status='${id}']`);
+  const changes = { assigned_to: $(`[data-assignee='${id}']`).value };
+  // An unchanged select is not a status command. A callback may have already
+  // confirmed this request while the manager was editing the assignee.
+  if (select.value !== select.dataset.currentStatus) changes.status = select.value;
+  await api(`/api/requests/${id}`, { method: "PATCH", body: JSON.stringify(changes) });
+  return loadManager();
+});
 $("#actionJobs").addEventListener("click", async (event) => { const review = event.target.closest("[data-action-review]"); const retry = event.target.closest("[data-action-retry]"); if (review) await api(`/api/actions/${review.dataset.action}/review`, { method: "POST", body: JSON.stringify({ decision: review.dataset.actionReview }) }); if (retry) await api(`/api/actions/${retry.dataset.actionRetry}/retry`, { method: "POST" }); if (review || retry) loadManager(); });
 $("#researchForm").addEventListener("submit", async (event) => { event.preventDefault(); const query = $("#researchQuery").value.trim(); await api("/api/research/jobs", { method: "POST", body: JSON.stringify({ query, idempotency_key: `${Date.now()}-${crypto.randomUUID()}` }) }); $("#researchQuery").value = ""; loadResearch(); });
 $("#researchJobs").addEventListener("click", async (event) => { const button = event.target.closest("[data-review]"); if (!button) return; await api(`/api/research/jobs/${button.dataset.job}/review`, { method: "POST", body: JSON.stringify({ action: button.dataset.review }) }); loadResearch(); });
-async function restoreSession() { if (!sessionId || (!sessionToken && !token)) { addMessage("bot", "Здравствуйте! AutoSfera AI объединяет продажи, поддержку, сервис и внутреннюю работу автодилера."); return; } try { const data = await api(`/api/session/${encodeURIComponent(sessionId)}`); if (!data.history?.length) { addMessage("bot", "Диалог на сервере пуст. Можно продолжить с этого сообщения."); return; } data.history.forEach((item) => addMessage(item.role === "user" ? "user" : "bot", item.content)); } catch { sessionId = null; sessionToken = ""; localStorage.removeItem("autosfera_session"); localStorage.removeItem("autosfera_session_token"); addMessage("bot", "Прошлый диалог недоступен без секрета этой сессии. Начат новый разговор."); } }
+async function restoreSession() {
+  const epoch = conversationEpoch;
+  if (!sessionId || (!sessionToken && !token)) {
+    addMessage("bot", "Здравствуйте! AutoSfera AI объединяет продажи, поддержку, сервис и внутреннюю работу автодилера.");
+    return;
+  }
+  try {
+    const data = await api(`/api/session/${encodeURIComponent(sessionId)}`);
+    if (epoch !== conversationEpoch) return;
+    if (!data.history?.length) {
+      addMessage("bot", "Диалог на сервере пуст. Можно продолжить с этого сообщения.");
+      return;
+    }
+    data.history.forEach((item) => addMessage(item.role === "user" ? "user" : "bot", item.content));
+  } catch {
+    if (epoch !== conversationEpoch) return;
+    clearConversation();
+    addMessage("bot", "Прошлый диалог недоступен без секрета этой сессии. Начат новый разговор.");
+  }
+}
 applyRole(); restoreSession();

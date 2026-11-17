@@ -117,27 +117,36 @@ class PostgresPlatformStore:
             return self._row(cur.fetchone())
 
     def update_request_details(self, dealer_id: str, request_id: str, **data: Any) -> dict[str, Any] | None:
-        current = self.get_request(dealer_id, request_id)
-        if current is None or current.get("status") != "saved":
-            return current
         keys = ("customer_name", "phone", "vehicle", "preferred_at", "comment", "session_id")
-        changed = any(data.get(key) != current.get(key) for key in keys if key in data)
-        version = int(current.get("details_version") or 1) + (1 if changed else 0)
+        fields = [key for key in keys if key in data]
+        if not fields:
+            return self.get_request(dealer_id, request_id)
+        different = " OR ".join(f"{key} IS DISTINCT FROM %s" for key in fields)
+        assignments = ", ".join(f"{key} = %s" for key in fields)
+        values = [data[key] for key in fields]
         with self.connect() as db, db.cursor() as cur:
             cur.execute(
-                """UPDATE requests SET customer_name = %s, phone = %s, vehicle = %s,
-                preferred_at = %s, comment = %s, session_id = %s, details_version = %s, updated_at = %s
+                f"""UPDATE requests SET
+                details_version = details_version + CASE WHEN {different} THEN 1 ELSE 0 END,
+                {assignments}, updated_at = %s
                 WHERE id = %s AND dealer_id = %s AND status = 'saved'
                 RETURNING *""",
-                (
-                    data.get("customer_name", current.get("customer_name")),
-                    data.get("phone", current.get("phone")),
-                    data.get("vehicle", current.get("vehicle")),
-                    data.get("preferred_at", current.get("preferred_at")),
-                    data.get("comment", current.get("comment")),
-                    data.get("session_id", current.get("session_id")),
-                    version, self._now(), request_id, dealer_id,
-                ),
+                (*values, *values, self._now(), request_id, dealer_id),
+            )
+            row = cur.fetchone()
+        return self._row(row) if row else self.get_request(dealer_id, request_id)
+
+    def confirm_request_version(
+        self, dealer_id: str, request_id: str, version: int, preferred_at: str | None,
+    ) -> dict[str, Any] | None:
+        """The version check and confirmation share the same row lock/write."""
+        with self.connect() as db, db.cursor() as cur:
+            cur.execute(
+                """UPDATE requests SET status = 'confirmed', updated_at = %s
+                WHERE id = %s AND dealer_id = %s AND status = 'saved'
+                  AND details_version = %s AND preferred_at IS NOT DISTINCT FROM %s
+                RETURNING *""",
+                (self._now(), request_id, dealer_id, version, preferred_at),
             )
             return self._row(cur.fetchone())
 
