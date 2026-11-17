@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import hmac
 import json
+import secrets
 from contextlib import asynccontextmanager
 from functools import lru_cache
 from typing import Any, Callable
@@ -16,7 +18,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from autosfera.agents import AGENT_META
-from autosfera.action_gateway import can_approve, execute_action
+from autosfera.action_gateway import can_approve, confirm_saved_request, execute_action
 from autosfera.beta import beta_readiness
 from autosfera.auth import (
     Actor, create_token, decode_token, verify_action_webhook,
@@ -24,6 +26,7 @@ from autosfera.auth import (
 )
 from autosfera.channels import build_channels
 from autosfera.config import get_settings
+from autosfera.intake import BOOKING_KINDS, apply_booking_intake, missing_booking_labels
 from autosfera.logging import get_logger, setup_logging
 from autosfera.orchestrator import AIOrchestrator
 from autosfera.skills import build_skill_registry
@@ -56,6 +59,47 @@ def require_roles(*roles: str) -> Callable[..., Actor]:
     return dependency
 
 
+def _session_token_hash(token: str) -> str:
+    return hashlib.sha256(token.encode()).hexdigest()
+
+
+def _authorize_session(session: dict[str, Any], actor: Actor, presented_token: str | None) -> None:
+    """A session id is only an address. Reading it requires the client secret or a matching employee."""
+    if session.get("dealer_id") and session["dealer_id"] != actor.dealer_id:
+        raise HTTPException(status_code=404, detail="Диалог не найден")
+    visibility = session.get("visibility") or "client"
+    if visibility == "internal":
+        if actor.role == "guest":
+            raise HTTPException(status_code=401, detail="Нужен вход сотрудника")
+        if actor.role in {"admin", "employee"}:
+            return
+        if actor.role in {"sales", "service"} and session.get("owner_subject") == actor.subject:
+            return
+        raise HTTPException(status_code=403, detail="Нет доступа к этому диалогу")
+    expected = session.get("access_token_hash")
+    if not expected or not presented_token:
+        raise HTTPException(status_code=401, detail="Нужен секрет этой сессии")
+    if not hmac.compare_digest(expected, _session_token_hash(presented_token)):
+        raise HTTPException(status_code=401, detail="Нужен секрет этой сессии")
+
+
+def _issue_session_access(store: Any, actor: Actor, session_id: str) -> str | None:
+    existing = store.load_session(actor.dealer_id, session_id)
+    if existing is None:
+        return None
+    visibility = "internal" if actor.role != "guest" else "client"
+    raw = secrets.token_urlsafe(32) if visibility == "client" and not existing.get("access_token_hash") else None
+    store.bind_session_access(
+        actor.dealer_id,
+        session_id,
+        token_hash=_session_token_hash(raw) if raw else None,
+        owner_subject=actor.subject,
+        owner_role=actor.role,
+        visibility=visibility,
+    )
+    return raw
+
+
 class ChatRequest(BaseModel):
     message: str = Field(..., min_length=1, max_length=4000)
     session_id: str | None = Field(default=None, max_length=160)
@@ -64,6 +108,8 @@ class ChatRequest(BaseModel):
 
 class ChatResponse(BaseModel):
     session_id: str
+    session_token: str | None = None
+    intake_state: str | None = None
     channel: str
     agent: str
     agent_label: str
@@ -104,7 +150,10 @@ class LoginRequest(BaseModel):
 
 
 class RequestUpdate(BaseModel):
-    status: str | None = Field(default=None, pattern="^(new|qualified|scheduled|assigned|done|cancelled)$")
+    status: str | None = Field(
+        default=None,
+        pattern="^(saved|new|qualified|scheduled|assigned|done|cancelled|confirmed)$",
+    )
     assigned_to: str | None = Field(default=None, max_length=120)
 
 
@@ -302,19 +351,34 @@ def create_app() -> FastAPI:
         return {"sections": sections}
 
     @app.post("/api/chat", response_model=ChatResponse)
-    def chat(body: ChatRequest, actor: Actor = Depends(optional_actor)) -> ChatResponse:
+    def chat(
+        body: ChatRequest,
+        x_session_token: str | None = Header(default=None),
+        actor: Actor = Depends(optional_actor),
+    ) -> ChatResponse:
         orch = get_orchestrator()
         channels = build_channels(orch)
         channel = channels.get(body.channel)
         if channel is None:
             raise HTTPException(status_code=400, detail=f"Unknown channel: {body.channel}")
+        store = get_store()
+        session_id = None
+        if body.session_id:
+            existing_session = store.load_session(actor.dealer_id, body.session_id)
+            if existing_session is not None:
+                _authorize_session(existing_session, actor, x_session_token)
+                # A client secret must never grant access to a staff answer.
+                # Keep the original client conversation intact and start a
+                # separate internal session when an employee changes context.
+                if actor.role == "guest" or existing_session.get("visibility") == "internal":
+                    session_id = body.session_id
         try:
             allowed_agents = set(AGENT_META)
             if actor.role not in {"employee", "admin"}:
                 allowed_agents.discard("EMPLOYEE_AGENT")
             result = orch.handle_message(
                 body.message,
-                session_id=body.session_id,
+                session_id=session_id,
                 channel=body.channel,
                 allowed_agents=allowed_agents,
             )
@@ -322,7 +386,17 @@ def create_app() -> FastAPI:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         except PermissionError as exc:
             raise HTTPException(status_code=403, detail=str(exc)) from exc
-        store = get_store()
+        remembered = orch.sessions.get(result.session_id)
+        if store.load_session(actor.dealer_id, result.session_id) is None and remembered is not None:
+            store.save_session(
+                actor.dealer_id,
+                remembered.session_id,
+                remembered.channel,
+                remembered.active_agent,
+                remembered.history,
+                remembered.metadata,
+            )
+        session_token = _issue_session_access(store, actor, result.session_id)
         store.record_conversation(
             dealer_id=actor.dealer_id,
             session_id=result.session_id,
@@ -336,18 +410,36 @@ def create_app() -> FastAPI:
         request_id = None
         action_id = None
         action_status = None
-        request_kind = {
-            "vehicle_selection": "lead",
-            "test_drive_booking": "test_drive",
-            "service_booking": "service",
-        }.get(result.skill or "")
-        should_propose = request_kind and result.collected_fields.get("phone")
-        if request_kind == "lead":
-            should_propose = bool(
-                should_propose
-                and result.collected_fields.get("customer_name")
-                and result.collected_fields.get("lead_requested")
+        intake_state = None
+        reply = result.reply
+        booking_kind = BOOKING_KINDS.get(result.skill or "")
+        if booking_kind and not missing_booking_labels(result.skill or "", result.collected_fields):
+            intake = apply_booking_intake(
+                store, actor.dealer_id, actor.subject, result.session_id,
+                booking_kind, result.collected_fields,
             )
+            intake_state = intake["intake_state"]
+            request = intake.get("request") or {}
+            action = intake.get("action") or {}
+            request_id = request.get("id")
+            action_id = action.get("id")
+            action_status = action.get("status")
+            if intake_state == "saved" and request_id:
+                reply = (
+                    f"{reply}\n\nЗаявка {request_id} сохранена. Статус: сохранена. "
+                    "Запись не подтверждена — её проверит сотрудник."
+                )
+            elif intake_state == "confirmed" and request_id:
+                reply = f"{reply}\n\nЗаявка {request_id} уже подтверждена."
+            elif intake_state == "cancelled" and request_id:
+                reply = f"{reply}\n\nЗаявка {request_id} отклонена."
+        request_kind = "lead" if result.skill == "vehicle_selection" else None
+        should_propose = bool(
+            request_kind
+            and result.collected_fields.get("phone")
+            and result.collected_fields.get("customer_name")
+            and result.collected_fields.get("lead_requested")
+        )
         if should_propose:
             action_payload = {
                 "customer_name": result.collected_fields.get("customer_name"),
@@ -375,13 +467,19 @@ def create_app() -> FastAPI:
                 "created" if _created else "reused", actor.dealer_id, action_id,
                 action["trace_id"], request_kind, result.session_id,
             )
+        remembered = orch.sessions.get(result.session_id)
+        if remembered and remembered.history and reply != result.reply:
+            remembered.history[-1]["content"] = reply
+            orch._persist(remembered)
         return ChatResponse(
             session_id=result.session_id,
+            session_token=session_token,
+            intake_state=intake_state,
             channel=result.channel,
             agent=result.agent,
             agent_label=result.agent_label,
             greeting=result.greeting,
-            reply=result.reply,
+            reply=reply,
             skill=result.skill,
             escalated=result.escalated,
             escalation_target=result.escalation_target,
@@ -398,10 +496,36 @@ def create_app() -> FastAPI:
         )
 
     @app.post("/api/reset")
-    def reset(body: ResetRequest) -> dict[str, Any]:
+    def reset(
+        body: ResetRequest,
+        x_session_token: str | None = Header(default=None),
+        actor: Actor = Depends(optional_actor),
+    ) -> dict[str, Any]:
+        existing = get_store().load_session(actor.dealer_id, body.session_id)
+        if existing is not None:
+            _authorize_session(existing, actor, x_session_token)
         orch = get_orchestrator()
         session = orch.reset_session(body.session_id)
         return {"session_id": session.session_id, "active_agent": session.active_agent}
+
+    @app.get("/api/session/{session_id}")
+    def read_session(
+        session_id: str,
+        x_session_token: str | None = Header(default=None),
+        actor: Actor = Depends(optional_actor),
+    ) -> dict[str, Any]:
+        session = get_store().load_session(actor.dealer_id, session_id)
+        if session is None:
+            raise HTTPException(status_code=404, detail="Диалог не найден")
+        _authorize_session(session, actor, x_session_token)
+        metadata = session.get("metadata") or {}
+        return {
+            "session_id": session_id,
+            "dealer_id": actor.dealer_id,
+            "visibility": session.get("visibility") or "client",
+            "history": session.get("history") or [],
+            "collected_fields": metadata.get("collected_fields") or {},
+        }
 
     @app.post("/api/requests", status_code=201)
     def create_business_request(
@@ -433,7 +557,17 @@ def create_app() -> FastAPI:
         body: RequestUpdate,
         actor: Actor = Depends(require_roles("admin", "sales", "service", "employee")),
     ) -> dict[str, Any]:
-        item = get_store().update_request(
+        store = get_store()
+        current = store.get_request(actor.dealer_id, request_id)
+        if current is None:
+            raise HTTPException(status_code=404, detail="Заявка не найдена")
+        kind_roles = {"lead": {"admin", "sales"}, "test_drive": {"admin", "sales"}, "service": {"admin", "service"}}
+        allowed = kind_roles.get(current.get("kind"), {"admin", "employee"})
+        if actor.role not in allowed and actor.role != "employee":
+            raise HTTPException(status_code=403, detail="Нет доступа к этой заявке")
+        if body.status == "confirmed" and current.get("status") != "confirmed":
+            raise HTTPException(status_code=409, detail="Статус confirmed ставит только выполненное действие")
+        item = store.update_request(
             actor.dealer_id,
             request_id,
             status=body.status,
@@ -590,6 +724,8 @@ def create_app() -> FastAPI:
         updated, changed = store.finish_action_job(
             dealer_id, action_id, status, "n8n", result=result, error=str(error) if error else None
         )
+        if changed and status == "completed" and updated is not None:
+            confirm_saved_request(store, updated)
         logger.info(
             "action_callback dealer_id=%s action_id=%s trace_id=%s status=%s accepted=%s",
             dealer_id, action_id, trace_id, status, changed,
@@ -724,7 +860,17 @@ def create_app() -> FastAPI:
         channel = channels.get(channel_name)
         if channel is None:
             raise HTTPException(status_code=404, detail="channel not found")
+        identity_keys = {
+            "web": "session_id", "telegram": "chat_id", "whatsapp": "from",
+            "email": "message_id", "crm": "ticket_id",
+        }
+        external_session = payload.get(identity_keys[channel_name]) or payload.get("session_id")
+        if external_session:
+            existing = get_store().load_session(_actor.dealer_id, str(external_session))
+            if existing is not None:
+                _authorize_session(existing, _actor, None)
         result = channel.receive(payload)
+        _issue_session_access(get_store(), _actor, result.session_id)
         return ChatResponse(
             session_id=result.session_id,
             channel=result.channel,

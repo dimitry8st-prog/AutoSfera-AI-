@@ -85,7 +85,7 @@ def test_rejected_action_never_creates_request(tmp_path) -> None:
     assert store.list_requests("main-salon") == []
 
 
-def test_chat_proposes_action_without_creating_request(monkeypatch, tmp_path) -> None:
+def test_chat_collects_test_drive_before_saving(monkeypatch, tmp_path) -> None:
     client, store = _client(monkeypatch, tmp_path)
     response = client.post(
         "/api/chat",
@@ -93,9 +93,12 @@ def test_chat_proposes_action_without_creating_request(monkeypatch, tmp_path) ->
     )
     assert response.status_code == 200
     body = response.json()
+    assert body["agent"] == "SALES_AGENT"
     assert body["skill"] == "test_drive_booking"
-    assert body["action_status"] == "waiting_approval"
+    assert body["intake_state"] is None
+    assert body["action_id"] is None
     assert body["request_id"] is None
+    assert "не сохранена" in body["reply"].lower()
     assert store.list_requests("main-salon") == []
 
 
@@ -115,6 +118,7 @@ def test_sales_lead_is_collected_across_turns_and_requires_approval(monkeypatch,
             "message": "Меня зовут Дмитрий, телефон +79991234567",
             "session_id": first.json()["session_id"],
         },
+        headers={"X-Session-Token": first.json()["session_token"]},
     )
     body = second.json()
     assert second.status_code == 200
@@ -147,7 +151,11 @@ def test_sales_lead_duplicate_message_reuses_one_action(monkeypatch, tmp_path) -
     }
     first = client.post("/api/chat", json=payload).json()
     payload["session_id"] = first["session_id"]
-    second = client.post("/api/chat", json=payload).json()
+    second = client.post(
+        "/api/chat",
+        json=payload,
+        headers={"X-Session-Token": first["session_token"]},
+    ).json()
     assert first["action_id"] == second["action_id"]
     assert len(store.list_action_jobs("main-salon")) == 1
 

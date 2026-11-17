@@ -166,8 +166,15 @@ class BaseAgent:
         history: list[dict[str, str]] | None = None,
         dialogue: DialogueLogger | None = None,
         llm: LLMClient | None = None,
+        collected_fields: dict[str, Any] | None = None,
     ) -> AgentReply:
         history = history or []
+        skill_ctx = {
+            "history": history,
+            "kb": self.rag.kb,
+            "message": message,
+            "collected_fields": collected_fields or {},
+        }
         # The orchestrator enriches only genuine short follow-ups with the last
         # user turn. Reusing the whole dialogue here contaminates retrieval after
         # a topic switch (for example, order status -> vehicle selection).
@@ -204,7 +211,7 @@ class BaseAgent:
                 self.key,
                 message,
                 chunks,
-                ctx={"history": history, "kb": self.rag.kb},
+                ctx=skill_ctx,
             )
         text = self._compose_grounded_reply(message, chunks, result, llm)
         reply = AgentReply(

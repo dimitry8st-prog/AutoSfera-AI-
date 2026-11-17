@@ -109,7 +109,24 @@ def execute_action(store: Any, dealer_id: str, action_id: str) -> dict[str, Any]
 
 def _execute_demo_crm(store: Any, job: dict[str, Any]) -> dict[str, Any] | None:
     payload = job["payload"]
+    linked_request_id = payload.get("request_id")
     try:
+        if linked_request_id and store.get_request(job["dealer_id"], linked_request_id) is not None:
+            result = {
+                "provider": "demo_crm",
+                "request_id": linked_request_id,
+                "request_version": payload.get("request_version"),
+            }
+            completed = store.finish_action_job(
+                job["dealer_id"], job["id"], "completed", "demo-crm", result=result
+            )[0]
+            current = confirm_saved_request(store, job) if completed and completed.get("status") == "completed" else None
+            logger.info(
+                "action_completed dealer_id=%s action_id=%s trace_id=%s provider=demo_crm request_id=%s status=%s",
+                job["dealer_id"], job["id"], job["trace_id"], linked_request_id,
+                (current or {}).get("status"),
+            )
+            return completed
         request = store.create_request(
             job["dealer_id"],
             job["kind"],
@@ -133,6 +150,29 @@ def _execute_demo_crm(store: Any, job: dict[str, Any]) -> dict[str, Any] | None:
     except Exception as exc:
         logger.exception("Demo CRM action failed action=%s", job["id"])
         return _fail(store, job, f"execution_failed: {type(exc).__name__}")
+
+
+def confirm_saved_request(store: Any, job: dict[str, Any]) -> dict[str, Any] | None:
+    """Move a saved intake to confirmed only when the approved snapshot is unchanged."""
+    payload = job.get("payload") or {}
+    request_id = payload.get("request_id")
+    if not request_id:
+        return None
+    version = payload.get("request_version")
+    updated = store.confirm_request_version(
+        job["dealer_id"], request_id, int(version), payload.get("preferred_at"),
+    ) if version is not None else None
+    if updated is None:
+        logger.info(
+            "request_confirm_skipped dealer_id=%s request_id=%s action_id=%s reason=version_mismatch",
+            job["dealer_id"], request_id, job.get("id"),
+        )
+        return store.get_request(job["dealer_id"], request_id)
+    logger.info(
+        "request_status dealer_id=%s request_id=%s to=confirmed",
+        job["dealer_id"], request_id,
+    )
+    return updated
 
 
 def _dispatch_n8n(store: Any, job: dict[str, Any]) -> dict[str, Any] | None:

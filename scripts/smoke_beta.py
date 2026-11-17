@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import logging
 import os
 import tempfile
 from pathlib import Path
@@ -55,6 +56,7 @@ def main() -> None:
             readiness = client.get("/api/beta/readiness", headers=auth)
             readiness.raise_for_status()
             assert readiness.json()["status"] == "ready_for_controlled_beta"
+            logging.shutdown()
 
     print("Controlled beta smoke: PASS")
 

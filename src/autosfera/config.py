@@ -29,6 +29,7 @@ class Settings(BaseSettings):
     )
     dealer_id: str = Field(default="main-salon", validation_alias="DEALER_ID")
     dealer_name: str = Field(default="AutoSfera Demo Salon", validation_alias="DEALER_NAME")
+    dealer_timezone: str = Field(default="Europe/Moscow", validation_alias="DEALER_TIMEZONE")
     database_path: Path = Field(
         default=ROOT_DIR / "data" / "autosfera.db",
         validation_alias="DATABASE_PATH",
